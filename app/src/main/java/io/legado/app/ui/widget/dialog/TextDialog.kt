@@ -3,9 +3,12 @@ package io.legado.app.ui.widget.dialog
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
+import androidx.lifecycle.lifecycleScope
 import io.legado.app.R
 import io.legado.app.base.BaseDialogFragment
 import io.legado.app.databinding.DialogTextViewBinding
+import io.legado.app.lib.theme.primaryColor
+import io.legado.app.utils.applyTint
 import io.legado.app.utils.setHtml
 import io.legado.app.utils.setLayout
 import io.legado.app.utils.viewbindingdelegate.viewBinding
@@ -24,12 +27,14 @@ class TextDialog() : BaseDialogFragment(R.layout.dialog_text_view) {
     }
 
     constructor(
+        title: String,
         content: String?,
         mode: Mode = Mode.TEXT,
         time: Long = 0,
         autoClose: Boolean = false
     ) : this() {
         arguments = Bundle().apply {
+            putString("title", title)
             putString("content", content)
             putString("mode", mode.name)
             putLong("time", time)
@@ -48,7 +53,17 @@ class TextDialog() : BaseDialogFragment(R.layout.dialog_text_view) {
     }
 
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
+        binding.toolBar.setBackgroundColor(primaryColor)
+        binding.toolBar.inflateMenu(R.menu.dialog_text)
+        binding.toolBar.menu.applyTint(requireContext())
+        binding.toolBar.setOnMenuItemClickListener {
+            when (it.itemId) {
+                R.id.menu_close -> dismissAllowingStateLoss()
+            }
+            true
+        }
         arguments?.let {
+            binding.toolBar.title = it.getString("title")
             val content = it.getString("content") ?: ""
             when (it.getString("mode")) {
                 Mode.MD.name -> binding.textView.post {
@@ -66,7 +81,7 @@ class TextDialog() : BaseDialogFragment(R.layout.dialog_text_view) {
         }
         if (time > 0) {
             binding.badgeView.setBadgeCount((time / 1000).toInt())
-            launch {
+            lifecycleScope.launch {
                 while (time > 0) {
                     delay(1000)
                     time -= 1000
@@ -82,7 +97,6 @@ class TextDialog() : BaseDialogFragment(R.layout.dialog_text_view) {
         } else {
             view.post {
                 dialog?.setCancelable(true)
-                if (autoClose) dialog?.cancel()
             }
         }
     }

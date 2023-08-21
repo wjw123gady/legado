@@ -53,7 +53,7 @@ class ExploreAdapter(context: Context, val callBack: CallBack) :
             if (exIndex == holder.layoutPosition) {
                 ivStatus.setImageResource(R.drawable.ic_arrow_down)
                 rotateLoading.loadingColor = context.accentColor
-                rotateLoading.show()
+                rotateLoading.visible()
                 if (scrollTo >= 0) {
                     callBack.scrollTo(scrollTo)
                 }
@@ -62,7 +62,7 @@ class ExploreAdapter(context: Context, val callBack: CallBack) :
                 }.onSuccess { kindList ->
                     upKindList(flexbox, item.bookSourceUrl, kindList)
                 }.onFinally {
-                    rotateLoading.hide()
+                    rotateLoading.gone()
                     if (scrollTo >= 0) {
                         callBack.scrollTo(scrollTo)
                         scrollTo = -1
@@ -70,7 +70,7 @@ class ExploreAdapter(context: Context, val callBack: CallBack) :
                 }
             } else kotlin.runCatching {
                 ivStatus.setImageResource(R.drawable.ic_arrow_right)
-                rotateLoading.hide()
+                rotateLoading.gone()
                 recyclerFlexbox(flexbox)
                 flexbox.gone()
             }
@@ -98,7 +98,7 @@ class ExploreAdapter(context: Context, val callBack: CallBack) :
                 } else {
                     tv.setOnClickListener {
                         if (kind.title.startsWith("ERROR:")) {
-                            it.activity?.showDialogFragment(TextDialog(kind.url))
+                            it.activity?.showDialogFragment(TextDialog("ERROR", kind.url))
                         } else {
                             callBack.openExplore(sourceUrl, kind.title, kind.url)
                         }
@@ -164,6 +164,7 @@ class ExploreAdapter(context: Context, val callBack: CallBack) :
             when (it.itemId) {
                 R.id.menu_edit -> callBack.editSource(source.bookSourceUrl)
                 R.id.menu_top -> callBack.toTop(source)
+                R.id.menu_search -> callBack.searchBook(source)
                 R.id.menu_login -> context.startActivity<SourceLoginActivity> {
                     putExtra("type", "bookSource")
                     putExtra("key", source.bookSourceUrl)
@@ -188,5 +189,6 @@ class ExploreAdapter(context: Context, val callBack: CallBack) :
         fun editSource(sourceUrl: String)
         fun toTop(source: BookSource)
         fun deleteSource(source: BookSource)
+        fun searchBook(bookSource: BookSource)
     }
 }

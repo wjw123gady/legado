@@ -1,5 +1,6 @@
 package io.legado.app.service
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -10,6 +11,7 @@ import io.legado.app.base.BaseService
 import io.legado.app.constant.AppConst
 import io.legado.app.constant.EventBus
 import io.legado.app.constant.IntentAction
+import io.legado.app.constant.NotificationId
 import io.legado.app.constant.PreferKey
 import io.legado.app.receiver.NetworkChangedListener
 import io.legado.app.utils.*
@@ -49,7 +51,7 @@ class WebService : BaseService() {
     }
     private var httpServer: HttpServer? = null
     private var webSocketServer: WebSocketServer? = null
-    private var notificationContent = ""
+    private var notificationContent = appCtx.getString(R.string.service_starting)
     private val networkChangedListener by lazy {
         NetworkChangedListener(this)
     }
@@ -58,8 +60,6 @@ class WebService : BaseService() {
         super.onCreate()
         if (useWakeLock) wakeLock.acquire(10 * 60 * 1000L /*10 minutes*/)
         isRun = true
-        notificationContent = getString(R.string.service_starting)
-        upNotification()
         upTile(true)
         networkChangedListener.register()
         networkChangedListener.onNetworkChanged = {
@@ -144,7 +144,7 @@ class WebService : BaseService() {
     /**
      * 更新通知
      */
-    private fun upNotification() {
+    override fun upNotification() {
         val builder = NotificationCompat.Builder(this, AppConst.channelIdWeb)
             .setSmallIcon(R.drawable.ic_web_service_noti)
             .setOngoing(true)
@@ -160,9 +160,10 @@ class WebService : BaseService() {
         )
         builder.setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
         val notification = builder.build()
-        startForeground(AppConst.notificationIdWeb, notification)
+        startForeground(NotificationId.WebService, notification)
     }
 
+    @SuppressLint("ObsoleteSdkInt")
     private fun upTile(active: Boolean) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             kotlin.runCatching {

@@ -27,10 +27,7 @@ import io.legado.app.ui.book.read.page.entities.TextPage
 import io.legado.app.ui.book.read.page.entities.TextPos
 import io.legado.app.ui.book.read.page.provider.ChapterProvider
 import io.legado.app.ui.book.read.page.provider.TextPageFactory
-import io.legado.app.utils.activity
-import io.legado.app.utils.invisible
-import io.legado.app.utils.screenshot
-import io.legado.app.utils.showDialogFragment
+import io.legado.app.utils.*
 import java.text.BreakIterator
 import java.util.*
 import kotlin.math.abs
@@ -135,6 +132,7 @@ class ReadView(context: Context, attrs: AttributeSet) :
         pageDelegate?.setViewSize(w, h)
         if (w > 0 && h > 0) {
             upBg()
+            callBack.upSystemUiVisibility()
         }
     }
 
@@ -183,6 +181,10 @@ class ReadView(context: Context, attrs: AttributeSet) :
             }
         }
 
+        //在多点触控时，事件不走ACTION_DOWN分支而产生的特殊事件处理
+        if (event.actionMasked == MotionEvent.ACTION_POINTER_DOWN || event.actionMasked == MotionEvent.ACTION_POINTER_UP){
+            pageDelegate?.onTouch(event)
+        }
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
                 callBack.screenOffTimerStart()
@@ -413,7 +415,10 @@ class ReadView(context: Context, attrs: AttributeSet) :
      */
     private fun click(action: Int) {
         when (action) {
-            0 -> callBack.showActionMenu()
+            0 -> {
+                pageDelegate?.dismissSnackBar()
+                callBack.showActionMenu()
+            }
             1 -> pageDelegate?.nextPageByAnim(defaultAnimationSpeed)
             2 -> pageDelegate?.prevPageByAnim(defaultAnimationSpeed)
             3 -> ReadBook.moveToNextChapter(true)
@@ -424,6 +429,7 @@ class ReadView(context: Context, attrs: AttributeSet) :
             8 -> activity?.showDialogFragment(ContentEditDialog())
             9 -> callBack.changeReplaceRuleState()
             10 -> callBack.openChapterList()
+            11 -> callBack.openSearchActivity(null)
         }
     }
 
@@ -654,5 +660,7 @@ class ReadView(context: Context, attrs: AttributeSet) :
         fun openChapterList()
         fun addBookmark()
         fun changeReplaceRuleState()
+        fun openSearchActivity(searchWord: String?)
+        fun upSystemUiVisibility()
     }
 }

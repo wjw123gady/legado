@@ -5,6 +5,8 @@ import android.os.Bundle
 import android.view.Menu
 import android.view.MenuItem
 import androidx.activity.viewModels
+import androidx.appcompat.widget.PopupMenu
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.ItemTouchHelper
 import io.legado.app.R
 import io.legado.app.base.VMBaseActivity
@@ -12,9 +14,14 @@ import io.legado.app.data.appDb
 import io.legado.app.data.entities.TxtTocRule
 import io.legado.app.databinding.ActivityTxtTocRuleBinding
 import io.legado.app.databinding.DialogEditTextBinding
+import io.legado.app.help.DirectLinkUpload
 import io.legado.app.lib.dialogs.alert
 import io.legado.app.lib.theme.primaryColor
+import io.legado.app.ui.association.ImportTxtTocRuleDialog
+import io.legado.app.ui.file.HandleFileContract
+import io.legado.app.ui.qrcode.QrCodeResult
 import io.legado.app.ui.widget.SelectActionBar
+import io.legado.app.ui.widget.dialog.TextDialog
 import io.legado.app.ui.widget.recycler.DragSelectTouchHelper
 import io.legado.app.ui.widget.recycler.ItemTouchCallback
 import io.legado.app.ui.widget.recycler.VerticalDivider
@@ -26,7 +33,8 @@ import kotlinx.coroutines.launch
 class TxtTocRuleActivity : VMBaseActivity<ActivityTxtTocRuleBinding, TxtTocRuleViewModel>(),
     TxtTocRuleAdapter.CallBack,
     SelectActionBar.CallBack,
-    TxtTocRuleEditDialog.Callback {
+    TxtTocRuleEditDialog.Callback,
+    PopupMenu.OnMenuItemClickListener {
 
     override val viewModel: TxtTocRuleViewModel by viewModels()
     override val binding: ActivityTxtTocRuleBinding by viewBinding(ActivityTxtTocRuleBinding::inflate)
@@ -34,6 +42,36 @@ class TxtTocRuleActivity : VMBaseActivity<ActivityTxtTocRuleBinding, TxtTocRuleV
         TxtTocRuleAdapter(this, this)
     }
     private val importTocRuleKey = "tocRuleUrl"
+    private val qrCodeResult = registerForActivityResult(QrCodeResult()) {
+        it ?: return@registerForActivityResult
+        showDialogFragment(ImportTxtTocRuleDialog(it))
+    }
+    private val importDoc = registerForActivityResult(HandleFileContract()) {
+        kotlin.runCatching {
+            it.uri?.readText(this)?.let {
+                showDialogFragment(ImportTxtTocRuleDialog(it))
+            }
+        }.onFailure {
+            toastOnUi("readTextError:${it.localizedMessage}")
+        }
+    }
+    private val exportResult = registerForActivityResult(HandleFileContract()) {
+        it.uri?.let { uri ->
+            alert(R.string.export_success) {
+                if (uri.toString().isAbsUrl()) {
+                    setMessage(DirectLinkUpload.getSummary())
+                }
+                val alertBinding = DialogEditTextBinding.inflate(layoutInflater).apply {
+                    editView.hint = getString(R.string.path)
+                    editView.setText(uri.toString())
+                }
+                customView { alertBinding.root }
+                okButton {
+                    sendToClip(uri.toString())
+                }
+            }
+        }
+    }
 
     override fun onActivityCreated(savedInstanceState: Bundle?) {
         initView()
@@ -58,33 +96,37 @@ class TxtTocRuleActivity : VMBaseActivity<ActivityTxtTocRuleBinding, TxtTocRuleV
 
     private fun initBottomActionBar() {
         binding.selectActionBar.setMainActionText(R.string.delete)
+        binding.selectActionBar.inflateMenu(R.menu.txt_toc_rule_sel)
+        binding.selectActionBar.setOnMenuItemClickListener(this)
         binding.selectActionBar.setCallBack(this)
     }
 
     private fun initData() {
-        launch {
+        lifecycleScope.launch {
             appDb.txtTocRuleDao.observeAll().conflate().collect { tocRules ->
-                adapter.setItems(tocRules)
+                adapter.setItems(tocRules, adapter.diffItemCallBack)
                 upCountView()
             }
         }
     }
 
     override fun onCompatCreateOptionsMenu(menu: Menu): Boolean {
-        menuInflater.inflate(R.menu.txt_toc_regex, menu)
+        menuInflater.inflate(R.menu.txt_toc_rule, menu)
         return super.onCompatCreateOptionsMenu(menu)
-    }
-
-    override fun onPrepareOptionsMenu(menu: Menu?): Boolean {
-        menu?.findItem(R.id.menu_split_long_chapter)?.isVisible = false
-        return super.onPrepareOptionsMenu(menu)
     }
 
     override fun onCompatOptionsItemSelected(item: MenuItem): Boolean {
         when (item.itemId) {
             R.id.menu_add -> showDialogFragment(TxtTocRuleEditDialog())
-            R.id.menu_default -> viewModel.importDefault()
-            R.id.menu_import -> showImportDialog()
+            R.id.menu_import_local -> importDoc.launch {
+                mode = HandleFileContract.FILE
+                allowExtensions = arrayOf("txt", "json")
+            }
+            R.id.menu_import_onLine -> showImportDialog()
+            R.id.menu_import_qr -> qrCodeResult.launch()
+            R.id.menu_import_default -> viewModel.importDefault()
+            R.id.menu_help -> showTxtTocRuleHelp()
+
         }
         return super.onCompatOptionsItemSelected(item)
     }
@@ -180,13 +222,32 @@ class TxtTocRuleActivity : VMBaseActivity<ActivityTxtTocRuleBinding, TxtTocRuleV
                         cacheUrls.add(0, it)
                         aCache.put(importTocRuleKey, cacheUrls.joinToString(","))
                     }
-                    viewModel.importOnLine(it) { msg ->
-                        toastOnUi(msg)
-                    }
+                    showDialogFragment(ImportTxtTocRuleDialog(it))
                 }
             }
             cancelButton()
         }
+    }
+
+    private fun showTxtTocRuleHelp() {
+        val text = String(assets.open("help/txtTocRuleHelp.md").readBytes())
+        showDialogFragment(TextDialog(getString(R.string.help), text, TextDialog.Mode.MD))
+    }
+
+    override fun onMenuItemClick(item: MenuItem): Boolean {
+        when (item.itemId) {
+            R.id.menu_enable_selection -> viewModel.enableSelection(*adapter.selection.toTypedArray())
+            R.id.menu_disable_selection -> viewModel.disableSelection(*adapter.selection.toTypedArray())
+            R.id.menu_export_selection -> exportResult.launch {
+                mode = HandleFileContract.EXPORT
+                fileData = HandleFileContract.FileData(
+                    "exportTxtTocRule.json",
+                    GSON.toJson(adapter.selection).toByteArray(),
+                    "application/json"
+                )
+            }
+        }
+        return true
     }
 
 }

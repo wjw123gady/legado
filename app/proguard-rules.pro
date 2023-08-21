@@ -146,6 +146,8 @@
 }
 
 # 保持js引擎调用的java类
+-keep class * extends io.legado.app.help.JsExtensions{*;}
+# 保持js引擎调用的java类
 -keep class **.analyzeRule.**{*;}
 # 保持web类
 -keep class **.web.**{*;}
@@ -174,8 +176,9 @@
 -dontwarn com.jeremyliao.liveeventbus.**
 -dontwarn org.commonmark.ext.gfm.**
 
--keep class com.google.gson.** { *; }
--keep class com.ke.gson.** { *; }
+-keep,allowobfuscation,allowshrinking class com.google.gson.** { *; }
+-keep,allowobfuscation,allowshrinking class com.ke.gson.** { *; }
+-keep,allowobfuscation,allowshrinking class * extends com.google.gson.reflect.TypeToken
 -keep class com.jeremyliao.liveeventbus.** { *; }
 -keep class okhttp3.**{*;}
 -keep class okio.**{*;}
@@ -211,9 +214,13 @@
 -dontwarn sun.reflect.**
 
 ## Rhino
+-keep class com.script.** { *; }
 -keep class javax.script.** { *; }
+-keep class java.lang.** { *; }
+-keep class java.util.function.** { *; }
 -keep class com.sun.script.javascript.** { *; }
--keep class org.mozilla.javascript.** { *; }
+-keep class org.mozilla.** { *; }
+-dontwarn org.mozilla.javascript.engine.RhinoScriptEngineFactory
 
 ###EPUB
 -dontwarn nl.siegmann.epublib.**
@@ -234,7 +241,7 @@
 }
 
 ## ExoPlayer 反射设置ua 保证该私有变量不被混淆
--keepclassmembers class com.google.android.exoplayer2.upstream.cache.CacheDataSource$Factory {
+-keepclassmembers class androidx.media3.datasource.cache.CacheDataSource$Factory {
     *** upstreamDataSourceFactory;
 }
 ## ExoPlayer 如果还不能播放就取消注释这个
@@ -242,6 +249,9 @@
 
 ## 对外提供api
 -keep class io.legado.app.api.ReturnData{*;}
+
+# Apache Commons Compress
+-keep class org.apache.commons.compress.archivers.** {*;}
 
 
 #-------------------Cronet------------------------------------
@@ -360,6 +370,7 @@
 # Proguard config for apps that depend on cronet_impl_native_java.jar.
 
 # This constructor is called using the reflection from Cronet API (cronet_api.jar).
+-keep class org.chromium.** { *; }
 -keep class * extends org.chromium.net.CronetProvider{
     public <init>(android.content.Context);
 }
@@ -385,10 +396,15 @@
 # https://android.googlesource.com/platform/sdk/+/marshmallow-mr1-release/files/proguard-android.txt#54
 -dontwarn android.support.**
 
-# This class should be explicitly kept to avoid failure if
-# class/merging/horizontal proguard optimization is enabled.
--keep class org.chromium.base.CollectionUtil
 #-------------------Cronet------------------------------------
 
-
+# Class.forName调用
+-keep class io.legado.app.lib.cronet.CronetInterceptor{*;}
+-keep class io.legado.app.lib.cronet.CronetLoader{*;}
+-keep class io.legado.app.help.AppUpdateGitHub{*;}
+-keep class io.legado.app.help.AppIntentType{*;}
+# Error Exception 
+-keep class * extends java.lang.Exception
+-keep class * extends java.lang.Error
+-keep class **Exception
 

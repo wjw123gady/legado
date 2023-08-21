@@ -57,10 +57,10 @@ class AddToBookshelfDialog() : BaseDialogFragment(R.layout.dialog_add_to_bookshe
         }
         viewModel.loadStateLiveData.observe(this) {
             if (it) {
-                binding.rotateLoading.show()
+                binding.rotateLoading.visible()
                 binding.bookInfo.invisible()
             } else {
-                binding.rotateLoading.hide()
+                binding.rotateLoading.gone()
             }
         }
         viewModel.loadErrorLiveData.observe(this) {
@@ -123,7 +123,7 @@ class AddToBookshelfDialog() : BaseDialogFragment(R.layout.dialog_add_to_bookshe
                         }
                     }
                 }
-                appDb.bookSourceDao.getBookSource(baseUrl)?.let { source ->
+                appDb.bookSourceDao.getBookSourceAddBook(baseUrl)?.let { source ->
                     getBookInfo(bookUrl, source)?.let { book ->
                         return@execute book
                     }
@@ -137,7 +137,7 @@ class AddToBookshelfDialog() : BaseDialogFragment(R.layout.dialog_add_to_bookshe
                 }
                 throw NoStackTraceException("未找到匹配书源")
             }.onError {
-                AppLog.put("添加书籍 ${bookUrl} 出错", it)
+                AppLog.put("添加书籍 $bookUrl 出错", it)
                 loadErrorLiveData.postValue(it.localizedMessage)
             }.onSuccess {
                 book = it

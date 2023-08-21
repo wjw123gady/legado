@@ -53,6 +53,11 @@
         app:layout="@layout/view_preference_category">
 
         <io.legado.app.lib.prefs.Preference
+            android:key="localPassword"
+            android:title="@string/set_local_password"
+            android:summary="@string/set_local_password_summary" />
+
+        <io.legado.app.lib.prefs.Preference
             android:key="userAgent"
             android:title="@string/user_agent" />
 
@@ -117,6 +122,12 @@
             app:iconSpaceReserved="false" />
 
         <io.legado.app.lib.prefs.SwitchPreference
+            android:defaultValue="false"
+            android:key="ignoreAudioFocus"
+            android:summary="@string/ignore_audio_focus_summary"
+            android:title="@string/ignore_audio_focus_title" />
+
+        <io.legado.app.lib.prefs.SwitchPreference
             android:defaultValue="true"
             android:key="autoClearExpired"
             android:summary="@string/auto_clear_expired_summary"
@@ -128,12 +139,6 @@
             android:summary="@string/show_add_to_shelf_alert_summary"
             android:title="@string/show_add_to_shelf_alert_title" />
 
-        <io.legado.app.lib.prefs.SwitchPreference
-            android:defaultValue="false"
-            android:key="ignoreAudioFocus"
-            android:summary="@string/ignore_audio_focus_summary"
-            android:title="@string/ignore_audio_focus_title" />
-
         <io.legado.app.lib.prefs.Preference
             android:key="webPort"
             android:title="@string/web_port_title"
@@ -143,6 +148,18 @@
             android:key="cleanCache"
             android:summary="@string/clear_cache_summary"
             android:title="@string/clear_cache"
+            app:iconSpaceReserved="false" />
+
+        <io.legado.app.lib.prefs.Preference
+            android:key="clearWebViewData"
+            android:summary="@string/clear_webview_data_summary"
+            android:title="@string/clear_webview_data"
+            app:iconSpaceReserved="false" />
+
+        <io.legado.app.lib.prefs.Preference
+            android:key="shrinkDatabase"
+            android:summary="@string/shrink_database_summary"
+            android:title="@string/shrink_database"
             app:iconSpaceReserved="false" />
 
         <io.legado.app.lib.prefs.Preference

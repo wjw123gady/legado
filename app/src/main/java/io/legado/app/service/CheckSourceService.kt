@@ -2,6 +2,7 @@ package io.legado.app.service
 
 import android.content.Intent
 import androidx.core.app.NotificationCompat
+import androidx.lifecycle.lifecycleScope
 import com.script.ScriptException
 import io.legado.app.R
 import io.legado.app.base.BaseService
@@ -9,12 +10,14 @@ import io.legado.app.constant.AppConst
 import io.legado.app.constant.BookSourceType
 import io.legado.app.constant.EventBus
 import io.legado.app.constant.IntentAction
+import io.legado.app.constant.NotificationId
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookSource
 import io.legado.app.exception.ContentEmptyException
 import io.legado.app.exception.NoStackTraceException
 import io.legado.app.exception.TocEmptyException
+import io.legado.app.help.IntentData
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.source.exploreKinds
 import io.legado.app.model.CheckSource
@@ -31,6 +34,7 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.launch
 import org.mozilla.javascript.WrappedException
+import splitties.init.appCtx
 import java.util.concurrent.Executors
 import kotlin.math.min
 
@@ -44,7 +48,7 @@ class CheckSourceService : BaseService() {
     private val allIds = ArrayList<String>()
     private val checkedIds = ArrayList<String>()
     private var processIndex = 0
-    private var notificationMsg = ""
+    private var notificationMsg = appCtx.getString(R.string.service_starting)
 
     private val notificationBuilder by lazy {
         NotificationCompat.Builder(this, AppConst.channelIdReadAloud)
@@ -62,20 +66,14 @@ class CheckSourceService : BaseService() {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
     }
 
-    override fun onCreate() {
-        super.onCreate()
-        notificationMsg = getString(R.string.start)
-        upNotification()
-    }
-
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            IntentAction.start -> intent.getStringArrayListExtra("selectIds")?.let {
+            IntentAction.start -> IntentData.get<List<String>>("checkSourceSelectedIds")?.let {
                 check(it)
             }
 
             IntentAction.resume -> upNotification()
-            else -> stopSelf()
+            IntentAction.stop -> stopSelf()
         }
         return super.onStartCommand(intent, flags, startId)
     }
@@ -112,7 +110,7 @@ class CheckSourceService : BaseService() {
         synchronized(this) {
             processIndex++
         }
-        launch(IO) {
+        lifecycleScope.launch(IO) {
             if (index < allIds.size) {
                 val sourceUrl = allIds[index]
                 appDb.bookSourceDao.getBookSource(sourceUrl)?.let { source ->
@@ -126,7 +124,11 @@ class CheckSourceService : BaseService() {
      *校验书源
      */
     private fun check(source: BookSource) {
-        execute(context = searchCoroutine, start = CoroutineStart.LAZY) {
+        execute(
+            context = searchCoroutine,
+            start = CoroutineStart.LAZY,
+            executeContext = IO
+        ) {
             Debug.startChecking(source)
             var searchWord = CheckSource.keyword
             source.ruleSearch?.checkKeyWord?.let {
@@ -192,7 +194,6 @@ class CheckSourceService : BaseService() {
                         "" else "\n\n${source.bookSourceComment}"
                 Debug.updateFinalMessage(source.bookSourceUrl, "校验失败:${it.localizedMessage}")
             }.onSuccess(searchCoroutine) {
-                source.removeGroup("校验超时")
                 Debug.updateFinalMessage(source.bookSourceUrl, "校验成功")
             }.onFinally(IO) {
                 source.respondTime = Debug.getRespondTime(source.bookSourceUrl)
@@ -217,6 +218,7 @@ class CheckSourceService : BaseService() {
                     source.bookSourceType != BookSourceType.file
                 ) {
                     val toc = WebBook.getChapterListAwait(source, mBook).getOrThrow()
+                        .filter { !(it.isVolume && it.url.startsWith(it.title)) }
                     val nextChapterUrl = toc.getOrNull(1)?.url ?: toc.first().url
                     //校验正文
                     if (CheckSource.checkContent) {
@@ -260,11 +262,11 @@ class CheckSourceService : BaseService() {
     /**
      * 更新通知
      */
-    private fun upNotification() {
+    override fun upNotification() {
         notificationBuilder.setContentText(notificationMsg)
         notificationBuilder.setProgress(allIds.size, checkedIds.size, false)
         postEvent(EventBus.CHECK_SOURCE, notificationMsg)
-        startForeground(AppConst.notificationIdCheckSource, notificationBuilder.build())
+        startForeground(NotificationId.CheckSourceService, notificationBuilder.build())
     }
 
 }

@@ -3,6 +3,7 @@ package io.legado.app.ui.book.read.page.entities
 
 import androidx.annotation.Keep
 import io.legado.app.data.entities.BookChapter
+import io.legado.app.data.entities.ReplaceRule
 import kotlin.math.min
 
 /**
@@ -19,6 +20,8 @@ data class TextChapter(
     val sameTitleRemoved: Boolean,
     val isVip: Boolean,
     val isPay: Boolean,
+    //起效的替换规则
+    val effectiveReplaceRules: List<ReplaceRule>?
 ) {
 
     fun getPage(index: Int): TextPage? {
@@ -126,4 +129,15 @@ data class TextChapter(
         }
         return pages.lastIndex
     }
+
+    fun clearSearchResult() {
+        pages.forEach { page ->
+            page.searchResult.forEach {
+                it.selected = false
+                it.isSearchResult = false
+            }
+            page.searchResult.clear()
+        }
+    }
+
 }

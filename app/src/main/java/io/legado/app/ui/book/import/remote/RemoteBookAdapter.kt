@@ -84,6 +84,9 @@ class RemoteBookAdapter(context: Context, val callBack: CallBack) :
                     }
                     notifyItemChanged(holder.layoutPosition, true)
                     callBack.upCountView()
+                } else {
+                    /* 点击开始阅读 */
+                    callBack.startRead(it)
                 }
             }
         }
@@ -116,7 +119,7 @@ class RemoteBookAdapter(context: Context, val callBack: CallBack) :
 
     fun revertSelection() {
         getItems().forEach {
-            if (!it.isDir) {
+            if (!it.isDir && !it.isOnBookShelf) {
                 if (selected.contains(it)) {
                     selected.remove(it)
                 } else {
@@ -140,5 +143,6 @@ class RemoteBookAdapter(context: Context, val callBack: CallBack) :
     interface CallBack {
         fun openDir(remoteBook: RemoteBook)
         fun upCountView()
+        fun startRead(remoteBook: RemoteBook)
     }
 }

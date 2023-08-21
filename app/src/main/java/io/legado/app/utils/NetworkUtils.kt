@@ -1,5 +1,6 @@
 package io.legado.app.utils
 
+import android.annotation.SuppressLint
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
@@ -21,6 +22,7 @@ object NetworkUtils {
     /**
      * 判断是否联网
      */
+    @SuppressLint("ObsoleteSdkInt")
     @Suppress("DEPRECATION")
     fun isAvailable(): Boolean {
         if (Build.VERSION.SDK_INT < 23) {
@@ -31,7 +33,9 @@ object NetworkUtils {
                         // 移动数据
                         mWiFiNetworkInfo.type == ConnectivityManager.TYPE_MOBILE ||
                         // 以太网
-                        mWiFiNetworkInfo.type == ConnectivityManager.TYPE_ETHERNET
+                        mWiFiNetworkInfo.type == ConnectivityManager.TYPE_ETHERNET ||
+                        // VPN
+                        mWiFiNetworkInfo.type == ConnectivityManager.TYPE_VPN
             }
         } else {
             val network = connectivityManager.activeNetwork
@@ -43,7 +47,9 @@ object NetworkUtils {
                             // 移动数据
                             nc.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ||
                             // 以太网
-                            nc.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+                            nc.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) ||
+                            // VPN
+                            nc.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
                 }
             }
         }
@@ -110,31 +116,26 @@ object NetworkUtils {
      * 获取绝对地址
      */
     fun getAbsoluteURL(baseURL: String?, relativePath: String): String {
-        if (baseURL.isNullOrEmpty()) return relativePath
-        if (relativePath.isAbsUrl()) return relativePath
-        if (relativePath.isDataUrl()) return relativePath
-        if (relativePath.startsWith("javascript")) return ""
-        var relativeUrl = relativePath
+        if (baseURL.isNullOrEmpty()) return relativePath.trim()
+        var absoluteUrl: URL? = null
         try {
-            val absoluteUrl = URL(baseURL.substringBefore(","))
-            val parseUrl = URL(absoluteUrl, relativePath)
-            relativeUrl = parseUrl.toString()
-            return relativeUrl
+            absoluteUrl = URL(baseURL.substringBefore(","))
         } catch (e: Exception) {
             e.printOnDebug()
         }
-        return relativeUrl
+        return getAbsoluteURL(absoluteUrl, relativePath)
     }
 
     /**
      * 获取绝对地址
      */
     fun getAbsoluteURL(baseURL: URL?, relativePath: String): String {
-        if (baseURL == null) return relativePath
-        if (relativePath.isAbsUrl()) return relativePath
-        if (relativePath.isDataUrl()) return relativePath
-        if (relativePath.startsWith("javascript")) return ""
-        var relativeUrl = relativePath
+        val relativePathTrim = relativePath.trim()
+        if (baseURL == null) return relativePathTrim
+        if (relativePathTrim.isAbsUrl()) return relativePathTrim
+        if (relativePathTrim.isDataUrl()) return relativePathTrim
+        if (relativePathTrim.startsWith("javascript")) return ""
+        var relativeUrl = relativePathTrim
         try {
             val parseUrl = URL(baseURL, relativePath)
             relativeUrl = parseUrl.toString()

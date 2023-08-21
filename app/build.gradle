@@ -2,7 +2,8 @@ plugins {
     id "com.android.application"
     id 'org.jetbrains.kotlin.android'
     id 'kotlin-parcelize'
-    id 'kotlin-kapt'
+    //id 'kotlin-kapt'
+    id 'com.google.devtools.ksp'
     //id "com.google.gms.google-services"
 }
 apply from: 'download.gradle'
@@ -17,10 +18,11 @@ def gitCommits = Integer.parseInt('git rev-list HEAD --count'.execute().text.tri
 
 android {
     compileSdk = compile_sdk_version
-    buildToolsVersion = build_tool_version
     namespace 'io.legado.app'
-    kotlinOptions {
-        jvmTarget = "11"
+    kotlin {
+        jvmToolchain {
+            languageVersion.set(JavaLanguageVersion.of(17))
+        }
     }
 
     signingConfigs {
@@ -39,13 +41,12 @@ android {
     }
     defaultConfig {
         applicationId "io.legado.app"
-        minSdk 21
+        minSdk 24
         targetSdk 33
         versionCode 10000 + gitCommits
         versionName version
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         project.ext.set("archivesBaseName", name + "_" + version)
-        multiDexEnabled true
 
         buildConfigField "String", "Cronet_Version", "\"$CronetVersion\""
         buildConfigField "String", "Cronet_Main_Version", "\"$CronetMainVersion\""
@@ -76,7 +77,6 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         debug {
-
             if (project.hasProperty("RELEASE_STORE_FILE")) {
                 signingConfig signingConfigs.myConfig
             }
@@ -86,15 +86,8 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
-
-    android.applicationVariants.all { variant ->
-        variant.outputs.all {
-            def flavor = variant.productFlavors[0].name
-            outputFileName = "${name}_${flavor}_${defaultConfig.versionName}.apk"
-        }
-    }
-
-    flavorDimensions.add("mode")
+    //noinspection GrDeprecatedAPIUsage
+    flavorDimensions = ['mode']
     productFlavors {
         app {
             dimension "mode"
@@ -105,13 +98,37 @@ android {
             applicationId "io.legado.play"
             manifestPlaceholders.put("APP_CHANNEL_VALUE", "google")
         }
+        lollipop {
+            dimension "mode"
+            minSdk 21
+            manifestPlaceholders.put("APP_CHANNEL_VALUE", "lollipop")
+        }
     }
+
+    android.applicationVariants.configureEach { variant ->
+        variant.outputs.configureEach {
+            def flavor = variant.productFlavors[0].name
+            outputFileName = "${name}_${flavor}_${defaultConfig.versionName}.apk"
+        }
+    }
+
+    // 设定Room的KSP参数
+    ksp {
+        arg("room.incremental", "true")
+        arg("room.expandProjection", "true")
+        arg("room.schemaLocation", "$projectDir/schemas")
+
+    }
+
     compileOptions {
         // Flag to enable support for the new language APIs
         coreLibraryDesugaringEnabled true
-        // Sets Java compatibility to Java 11
-        sourceCompatibility JavaVersion.VERSION_11
-        targetCompatibility JavaVersion.VERSION_11
+        // Sets Java compatibility
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    packaging {
+        resources.excludes.add('META-INF/*')
     }
 
     sourceSets {
@@ -121,19 +138,21 @@ android {
     lint {
         checkDependencies true
     }
-    tasks.withType(JavaCompile) {
-        //options.compilerArgs << "-Xlint:unchecked"
+    tasks.withType(JavaCompile).tap {
+        configureEach {
+            //options.compilerArgs << "-Xlint:unchecked"
+        }
     }
 }
 
 dependencies {
     compileOnly "com.android.tools.build:gradle:$agp_version"
     //noinspection GradleDependency,GradlePackageUpdate
-    coreLibraryDesugaring('com.android.tools:desugar_jdk_libs:1.2.2')
+    coreLibraryDesugaring('com.android.tools:desugar_jdk_libs_nio:2.0.3')
     testImplementation('junit:junit:4.13.2')
     androidTestImplementation('androidx.test:runner:1.5.2')
+    androidTestImplementation('androidx.test.ext:junit:1.1.5')
     androidTestImplementation('androidx.test.espresso:espresso-core:3.5.1')
-    implementation('androidx.multidex:multidex:2.0.1')
     //kotlin
     //noinspection GradleDependency,DifferentStdlibGradleVersion
     implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version")
@@ -141,7 +160,7 @@ dependencies {
     //noinspection GradleDependency,DifferentStdlibGradleVersion
     implementation("org.jetbrains.kotlin:kotlin-reflect:$kotlin_version")
     //协程
-    def coroutines_version = '1.6.4'
+    def coroutines_version = '1.7.3'
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutines_version")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:$coroutines_version")
 
@@ -149,63 +168,71 @@ dependencies {
     implementation('com.github.android:renderscript-intrinsics-replacement-toolkit:b6363490c3')
 
     //androidX
-    implementation('androidx.core:core-ktx:1.9.0')
-    implementation('androidx.appcompat:appcompat:1.6.0')
-    implementation('androidx.activity:activity-ktx:1.6.1')
-    implementation('androidx.fragment:fragment-ktx:1.5.5')
+    implementation('androidx.core:core-ktx:1.10.1')
+    implementation('androidx.appcompat:appcompat:1.6.1')
+    implementation('androidx.activity:activity-ktx:1.7.2')
+    implementation('androidx.fragment:fragment-ktx:1.6.1')
     implementation('androidx.preference:preference-ktx:1.2.0')
     implementation('androidx.constraintlayout:constraintlayout:2.1.4')
     implementation('androidx.swiperefreshlayout:swiperefreshlayout:1.1.0')
     implementation('androidx.viewpager2:viewpager2:1.0.0')
-    implementation('androidx.webkit:webkit:1.5.0')
+    implementation('androidx.webkit:webkit:1.7.0')
 
     //google
-    implementation('com.google.android.material:material:1.7.0')
+    implementation('com.google.android.material:material:1.9.0')
     implementation('com.google.android.flexbox:flexbox:3.0.0')
     implementation('com.google.code.gson:gson:2.10.1')
 
     //lifecycle
-    def lifecycle_version = '2.5.1'
+    def lifecycle_version = '2.6.1'
     implementation("androidx.lifecycle:lifecycle-common-java8:$lifecycle_version")
     implementation("androidx.lifecycle:lifecycle-service:$lifecycle_version")
 
     //media
     implementation("androidx.media:media:1.6.0")
-    implementation("com.google.android.exoplayer:exoplayer-core:$exoplayer_version")
-    implementation("com.google.android.exoplayer:extension-okhttp:$exoplayer_version")
+    // For media playback using ExoPlayer
+    implementation "androidx.media3:media3-exoplayer:$media3_version"
+    // For loading data using the OkHttp network stack
+    implementation "androidx.media3:media3-datasource-okhttp:$media3_version"
+    // For exposing and controlling media sessions
+    //implementation "androidx.media3:media3-session:$media3_version"
 
     //Splitties
     implementation("com.louiscad.splitties:splitties-appctx:$splitties_version")
     implementation("com.louiscad.splitties:splitties-systemservices:$splitties_version")
     implementation("com.louiscad.splitties:splitties-views:$splitties_version")
 
-    //room
+    //room sql语句不高亮解决方法https://issuetracker.google.com/issues/234612964#comment6
     implementation("androidx.room:room-runtime:$room_version")
     implementation("androidx.room:room-ktx:$room_version")
-    kapt("androidx.room:room-compiler:$room_version")
+    //kapt("androidx.room:room-compiler:$room_version")
+    ksp("androidx.room:room-compiler:$room_version")
     androidTestImplementation("androidx.room:room-testing:$room_version")
 
     //liveEventBus
     implementation('io.github.jeremyliao:live-event-bus-x:1.8.0')
 
     //规则相关
-    implementation('org.jsoup:jsoup:1.15.3')
-    implementation('com.jayway.jsonpath:json-path:2.7.0')
-    implementation('cn.wanghaomiao:JsoupXpath:2.5.1')
-    implementation(project(path: ':epublib'))
+    implementation('org.jsoup:jsoup:1.16.1')
+    implementation('com.jayway.jsonpath:json-path:2.8.0')
+    implementation('cn.wanghaomiao:JsoupXpath:2.5.3')
+    implementation(project(path: ':modules:book'))
 
     //JS rhino
-    //implementation('com.github.gedoor:rhino-android:1.8')
-    implementation(fileTree(dir: 'lib', include: ['rhino-*.jar']))
+    appImplementation(project(path: ':modules:rhino1.7.3'))
+    googleImplementation(project(path: ':modules:rhino1.7.3'))
+    lollipopImplementation(project(path: ':modules:rhino1.7.3'))
 
     //网络
-    implementation('com.squareup.okhttp3:okhttp:4.10.0')
-    implementation(fileTree(dir: 'cronetlib', include: ['*.jar', '*.aar']))
+    implementation('com.squareup.okhttp3:okhttp:4.11.0')
+    appImplementation(fileTree(dir: 'cronetlib', include: ['*.jar', '*.aar']))
+    appImplementation 'com.google.protobuf:protobuf-javalite:3.23.4'
 
     //Glide
-    def glideVersion = "4.14.2"
+    def glideVersion = "4.15.1"
     implementation("com.github.bumptech.glide:glide:$glideVersion")
-    kapt("com.github.bumptech.glide:compiler:$glideVersion")
+    //kapt("com.github.bumptech.glide:compiler:$glideVersion")
+    ksp("com.github.bumptech.glide:ksp:$glideVersion")
 
     //Svg
     implementation("com.caverock:androidsvg-aar:1.4")
@@ -218,13 +245,19 @@ dependencies {
     implementation("org.nanohttpd:nanohttpd-websocket:$nanoHttpdVersion")
 
     //二维码
-    implementation('com.github.jenly1314:zxing-lite:2.3.0')
+    implementation('com.github.jenly1314:zxing-lite:2.4.0')
 
     //颜色选择
     implementation('com.jaredrummler:colorpicker:1.1.0')
 
     //apache
     implementation('org.apache.commons:commons-text:1.10.0')
+    //noinspection GradleDependency,1.23.0对安卓支持不好
+    implementation 'org.apache.commons:commons-compress:1.22'
+    implementation 'org.tukaani:xz:1.9'
+
+    //RAR
+    implementation 'com.github.junrar:junrar:7.5.5'
 
     //MarkDown
     def markwonVersion = "4.6.2"
@@ -234,11 +267,11 @@ dependencies {
     implementation("io.noties.markwon:html:$markwonVersion")
 
     //转换繁体
-    implementation('com.github.liuyueyi.quick-chinese-transfer:quick-transfer-core:0.2.10')
+    implementation('com.github.liuyueyi.quick-chinese-transfer:quick-transfer-core:0.2.13')
 
     //加解密类库,有些书源使用
     //noinspection GradleDependency,GradlePackageUpdate
-    implementation('cn.hutool:hutool-crypto:5.8.11')
+    implementation('cn.hutool:hutool-crypto:5.8.21')
 
     //firebase, 崩溃统计和性能统计, 会导致共存版本崩溃
     //implementation platform('com.google.firebase:firebase-bom:30.0.1')

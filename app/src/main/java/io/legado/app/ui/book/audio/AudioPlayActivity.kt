@@ -10,8 +10,10 @@ import android.view.Menu
 import android.view.MenuItem
 import android.widget.SeekBar
 import androidx.activity.viewModels
+import androidx.lifecycle.lifecycleScope
 import io.legado.app.R
 import io.legado.app.base.VMBaseActivity
+import io.legado.app.constant.BookType
 import io.legado.app.constant.EventBus
 import io.legado.app.constant.Status
 import io.legado.app.constant.Theme
@@ -21,6 +23,7 @@ import io.legado.app.data.entities.BookChapter
 import io.legado.app.data.entities.BookSource
 import io.legado.app.databinding.ActivityAudioPlayBinding
 import io.legado.app.help.book.isAudio
+import io.legado.app.help.book.removeType
 import io.legado.app.help.config.AppConfig
 import io.legado.app.lib.dialogs.alert
 import io.legado.app.model.AudioPlay
@@ -44,6 +47,7 @@ import java.util.*
 /**
  * 音频播放
  */
+@SuppressLint("ObsoleteSdkInt")
 class AudioPlayActivity :
     VMBaseActivity<ActivityAudioPlayBinding, AudioPlayViewModel>(toolBarTheme = Theme.Dark),
     ChangeBookSourceDialog.CallBack {
@@ -192,9 +196,11 @@ class AudioPlayActivity :
             viewModel.changeTo(source, book, toc)
         } else {
             AudioPlay.stop(this)
-            launch {
+            lifecycleScope.launch {
                 withContext(IO) {
                     AudioPlay.book?.migrateTo(book, toc)
+                    book.removeType(BookType.updateError)
+                    AudioPlay.book?.delete()
                     appDb.bookDao.insert(book)
                 }
                 startActivity<ReadBookActivity> {

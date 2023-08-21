@@ -7,6 +7,7 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.core.view.setPadding
 import androidx.fragment.app.activityViewModels
+import androidx.lifecycle.lifecycleScope
 import io.legado.app.R
 import io.legado.app.base.BaseDialogFragment
 import io.legado.app.constant.AppLog
@@ -15,16 +16,30 @@ import io.legado.app.data.entities.rule.RowUi
 import io.legado.app.databinding.DialogLoginBinding
 import io.legado.app.databinding.ItemFilletTextBinding
 import io.legado.app.databinding.ItemSourceEditBinding
+import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.lib.dialogs.alert
 import io.legado.app.lib.theme.primaryColor
 import io.legado.app.ui.about.AppLogDialog
-import io.legado.app.utils.*
+import io.legado.app.utils.GSON
+import io.legado.app.utils.applyTint
+import io.legado.app.utils.dpToPx
+import io.legado.app.utils.isAbsUrl
+import io.legado.app.utils.openUrl
+import io.legado.app.utils.printOnDebug
+import io.legado.app.utils.setLayout
+import io.legado.app.utils.showDialogFragment
+import io.legado.app.utils.toastOnUi
 import io.legado.app.utils.viewbindingdelegate.viewBinding
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.Dispatchers.Main
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import splitties.views.onClick
+import kotlin.collections.HashMap
+import kotlin.collections.List
+import kotlin.collections.forEachIndexed
+import kotlin.collections.hashMapOf
+import kotlin.collections.set
 
 
 class SourceLoginDialog : BaseDialogFragment(R.layout.dialog_login, true) {
@@ -45,40 +60,56 @@ class SourceLoginDialog : BaseDialogFragment(R.layout.dialog_login, true) {
         val loginUi = source.loginUi()
         loginUi?.forEachIndexed { index, rowUi ->
             when (rowUi.type) {
-                "text" -> ItemSourceEditBinding.inflate(layoutInflater, binding.root, false).let {
+                RowUi.Type.text -> ItemSourceEditBinding.inflate(
+                    layoutInflater,
+                    binding.root,
+                    false
+                ).let {
                     binding.flexbox.addView(it.root)
-                    it.root.id = index
+                    it.root.id = index + 1000
                     it.textInputLayout.hint = rowUi.name
                     it.editText.setText(loginInfo?.get(rowUi.name))
                 }
-                "password" -> ItemSourceEditBinding.inflate(layoutInflater, binding.root, false)
-                    .let {
-                        binding.flexbox.addView(it.root)
-                        it.root.id = index
-                        it.textInputLayout.hint = rowUi.name
-                        it.editText.inputType =
-                            InputType.TYPE_TEXT_VARIATION_PASSWORD or InputType.TYPE_CLASS_TEXT
-                        it.editText.setText(loginInfo?.get(rowUi.name))
-                    }
-                "button" -> ItemFilletTextBinding.inflate(layoutInflater, binding.root, false).let {
+                RowUi.Type.password -> ItemSourceEditBinding.inflate(
+                    layoutInflater,
+                    binding.root,
+                    false
+                ).let {
                     binding.flexbox.addView(it.root)
-                    it.root.id = index
+                    it.root.id = index + 1000
+                    it.textInputLayout.hint = rowUi.name
+                    it.editText.inputType =
+                        InputType.TYPE_TEXT_VARIATION_PASSWORD or InputType.TYPE_CLASS_TEXT
+                    it.editText.setText(loginInfo?.get(rowUi.name))
+                }
+                RowUi.Type.button -> ItemFilletTextBinding.inflate(
+                    layoutInflater,
+                    binding.root,
+                    false
+                ).let {
+                    binding.flexbox.addView(it.root)
+                    it.root.id = index + 1000
                     it.textView.text = rowUi.name
                     it.textView.setPadding(16.dpToPx())
                     it.root.onClick {
-                        if (rowUi.action.isAbsUrl()) {
-                            context?.openUrl(rowUi.action!!)
-                        } else {
-                            // JavaScript
-                            rowUi.action?.let { buttonFunctionJS ->
-                                kotlin.runCatching {
-                                    source.getLoginJs()?.let { loginJS ->
-                                        source.evalJS("$loginJS\n$buttonFunctionJS") {
-                                            put("result", getLoginData(loginUi))
+                        Coroutine.async {
+                            if (rowUi.action.isAbsUrl()) {
+                                context?.openUrl(rowUi.action!!)
+                            } else {
+                                // JavaScript
+                                rowUi.action?.let { buttonFunctionJS ->
+                                    kotlin.runCatching {
+                                        source.getLoginJs()?.let { loginJS ->
+                                            source.evalJS("$loginJS\n$buttonFunctionJS") {
+                                                put("result", getLoginData(loginUi))
+                                            }
                                         }
+                                    }.onFailure { e ->
+                                        AppLog.put(
+                                            "LoginUI Button ${rowUi.name} JavaScript error",
+                                            e
+                                        )
                                     }
-                                }.onFailure {
-                                    AppLog.put("LoginUI Button ${rowUi.name} JavaScript error", it)
                                 }
                             }
                         }
@@ -112,7 +143,7 @@ class SourceLoginDialog : BaseDialogFragment(R.layout.dialog_login, true) {
         loginUi?.forEachIndexed { index, rowUi ->
             when (rowUi.type) {
                 "text", "password" -> {
-                    val rowView = binding.root.findViewById<View>(index)
+                    val rowView = binding.root.findViewById<View>(index + 1000)
                     ItemSourceEditBinding.bind(rowView).editText.text?.let {
                         loginData[rowUi.name] = it.toString()
                     }
@@ -123,7 +154,7 @@ class SourceLoginDialog : BaseDialogFragment(R.layout.dialog_login, true) {
     }
 
     private fun login(source: BaseSource, loginData: HashMap<String, String>) {
-        launch(IO) {
+        lifecycleScope.launch(IO) {
             if (loginData.isEmpty()) {
                 source.removeLoginInfo()
                 withContext(Main) {

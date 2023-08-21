@@ -12,6 +12,8 @@ import io.legado.app.exception.NoStackTraceException
 import splitties.init.appCtx
 import splitties.systemservices.downloadManager
 import java.io.File
+import java.io.InputStream
+import java.io.OutputStream
 import java.nio.charset.Charset
 
 
@@ -31,6 +33,24 @@ data class FileDoc(
 
     fun readBytes(): ByteArray {
         return uri.readBytes(appCtx)
+    }
+
+    fun asDocumentFile(): DocumentFile? {
+        if (isContentScheme) {
+            return if (isDir) {
+                DocumentFile.fromTreeUri(appCtx, uri)
+            } else {
+                DocumentFile.fromSingleUri(appCtx, uri)
+            }
+        }
+        return null
+    }
+
+    fun asFile(): File? {
+        if (isContentScheme) {
+            return null
+        }
+        return File(uri.path!!)
     }
 
     companion object {
@@ -181,12 +201,11 @@ fun FileDoc.find(name: String, depth: Int = 0): FileDoc? {
 
 fun FileDoc.createFileIfNotExist(
     fileName: String,
-    mimeType: String = "",
     vararg subDirs: String
 ): FileDoc {
     return if (uri.isContentScheme()) {
         val documentFile = DocumentFile.fromTreeUri(appCtx, uri)!!
-        val tmp = DocumentUtils.createFileIfNotExist(documentFile, fileName, mimeType, *subDirs)!!
+        val tmp = DocumentUtils.createFileIfNotExist(documentFile, fileName, *subDirs)!!
         FileDoc.fromDocumentFile(tmp)
     } else {
         val path = FileUtils.getPath(uri.path!!, *subDirs) + File.separator + fileName
@@ -209,6 +228,14 @@ fun FileDoc.createFolderIfNotExist(
     }
 }
 
+fun FileDoc.openInputStream(): Result<InputStream> {
+    return uri.inputStream(appCtx)
+}
+
+fun FileDoc.openOutputStream(): Result<OutputStream> {
+    return uri.outputStream(appCtx)
+}
+
 fun FileDoc.exists(
     fileName: String,
     vararg subDirs: String
@@ -229,11 +256,36 @@ fun FileDoc.exists(): Boolean {
     }
 }
 
+fun FileDoc.writeText(text: String) {
+    if (uri.isContentScheme()) {
+        uri.writeText(appCtx, text)
+    } else {
+        File(uri.path!!).writeText(text)
+    }
+}
+
+fun FileDoc.delete() {
+    asFile()?.let {
+        FileUtils.delete(it, true)
+    }
+    asDocumentFile()?.delete()
+}
+
 /**
  * DocumentFile 的 listFiles() 非常的慢,尽量不要使用
  */
 fun DocumentFile.listFileDocs(filter: FileDocFilter? = null): ArrayList<FileDoc>? {
     return FileDoc.fromDocumentFile(this).list(filter)
+}
+
+@Throws(Exception::class)
+fun DocumentFile.openInputStream(): InputStream? {
+    return appCtx.contentResolver.openInputStream(uri)
+}
+
+@Throws(Exception::class)
+fun DocumentFile.openOutputStream(): OutputStream? {
+    return appCtx.contentResolver.openOutputStream(uri)
 }
 
 @Throws(Exception::class)
@@ -260,4 +312,20 @@ fun DocumentFile.readBytes(context: Context): ByteArray {
         it.close()
         return buffer
     } ?: throw NoStackTraceException("打开文件失败\n${uri}")
+}
+
+fun DocumentFile.checkWrite(): Boolean {
+    return try {
+        val filename = System.currentTimeMillis().toString()
+        createFile(FileUtils.getMimeType(filename), filename)?.let {
+            it.openOutputStream()?.let { out ->
+                out.use { }
+                it.delete()
+                return true
+            }
+        }
+        false
+    } catch (e: Exception) {
+        false
+    }
 }

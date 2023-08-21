@@ -3,8 +3,9 @@
 package io.legado.app.help.book
 
 import android.net.Uri
-import io.legado.app.constant.BookSourceType
-import io.legado.app.constant.BookType
+import com.script.SimpleBindings
+import com.script.rhino.RhinoScriptEngine
+import io.legado.app.constant.*
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.BaseBook
 import io.legado.app.data.entities.Book
@@ -18,56 +19,61 @@ import java.util.concurrent.ConcurrentHashMap
 
 
 val Book.isAudio: Boolean
-    get() {
-        return type and BookType.audio > 0
-    }
+    get() = isType(BookType.audio)
 
 val Book.isImage: Boolean
-    get() {
-        return type and BookType.image > 0
-    }
+    get() = isType(BookType.image)
 
 val Book.isLocal: Boolean
     get() {
         if (type == 0) {
             return origin == BookType.localTag || origin.startsWith(BookType.webDavTag)
         }
-        return type and BookType.local > 0
+        return isType(BookType.local)
     }
 
 val Book.isLocalTxt: Boolean
-    get() {
-        return isLocal && originName.endsWith(".txt", true)
-    }
+    get() = isLocal && originName.endsWith(".txt", true)
 
 val Book.isEpub: Boolean
-    get() {
-        return isLocal && originName.endsWith(".epub", true)
-    }
+    get() = isLocal && originName.endsWith(".epub", true)
 
 val Book.isUmd: Boolean
-    get() {
-        return isLocal && originName.endsWith(".umd", true)
-    }
+    get() = isLocal && originName.endsWith(".umd", true)
+
 val Book.isPdf: Boolean
-    get() {
-        return isLocal && originName.endsWith(".pdf", true)
-    }
+    get() = isLocal && originName.endsWith(".pdf", true)
 
 val Book.isOnLineTxt: Boolean
-    get() {
-        return !isLocal && type and BookType.text > 0
-    }
+    get() = !isLocal && isType(BookType.text)
+
+val Book.isWebFile: Boolean
+    get() = isType(BookType.webFile)
 
 val Book.isUpError: Boolean
-    get() = type and BookType.updateError > 0
+    get() = isType(BookType.updateError)
+
+val Book.isArchive: Boolean
+    get() = isType(BookType.archive)
+
+val Book.archiveName: String
+    get() {
+        if (!isArchive) throw NoStackTraceException("Book is not deCompressed from archive")
+        // local_book::archive.rar
+        // webDav::https://...../archive.rar
+        return origin.substringAfter("::").substringAfterLast("/")
+    }
 
 fun Book.contains(word: String?): Boolean {
     if (word.isNullOrEmpty()) {
         return true
     }
-    return name.contains(word) || author.contains(word)
-            || originName.contains(word) || origin.contains(word)
+    return name.contains(word)
+            || author.contains(word)
+            || originName.contains(word)
+            || origin.contains(word)
+            || kind?.contains(word) == true
+            || intro?.contains(word) == true
 }
 
 private val localUriCache by lazy {
@@ -136,6 +142,17 @@ fun Book.getLocalUri(): Uri {
     return uri
 }
 
+
+fun Book.getArchiveUri(): Uri? {
+    val defaultBookDir = AppConfig.defaultBookTreeUri
+    return if (isArchive && !defaultBookDir.isNullOrBlank()) {
+        FileDoc.fromUri(Uri.parse(defaultBookDir), true)
+            .find(archiveName)?.uri
+    } else {
+        null
+    }
+}
+
 fun Book.cacheLocalUri(uri: Uri) {
     localUriCache[bookUrl] = uri
 }
@@ -146,7 +163,7 @@ fun Book.removeLocalUriCache() {
 
 fun Book.getRemoteUrl(): String? {
     if (origin.startsWith(BookType.webDavTag)) {
-        return origin.substring(8)
+        return origin.substring(BookType.webDavTag.length)
     }
     return null
 }
@@ -172,6 +189,8 @@ fun Book.clearType() {
     type = 0
 }
 
+fun Book.isType(@BookType.Type bookType: Int): Boolean = type and bookType > 0
+
 fun Book.upType() {
     if (type < 8) {
         type = when (type) {
@@ -180,7 +199,7 @@ fun Book.upType() {
             BookSourceType.file -> BookType.webFile
             else -> BookType.text
         }
-        if (origin == "loc_book" || origin.startsWith(BookType.webDavTag)) {
+        if (origin == BookType.localTag || origin.startsWith(BookType.webDavTag)) {
             type = type or BookType.local
         }
     }
@@ -209,4 +228,55 @@ fun Book.isSameNameAuthor(other: Any?): Boolean {
         return name == other.name && author == other.author
     }
     return false
+}
+
+fun Book.getExportFileName(suffix: String): String {
+    val jsStr = AppConfig.bookExportFileName
+    if (jsStr.isNullOrBlank()) {
+        return "$name 作者：${getRealAuthor()}.$suffix"
+    }
+    val bindings = SimpleBindings()
+    bindings["epubIndex"] = ""// 兼容老版本,修复可能存在的错误
+    bindings["name"] = name
+    bindings["author"] = getRealAuthor()
+    return kotlin.runCatching {
+        RhinoScriptEngine.eval(jsStr, bindings).toString() + "." + suffix
+    }.onFailure {
+        AppLog.put("导出书名规则错误,使用默认规则\n${it.localizedMessage}", it)
+    }.getOrDefault("${name} 作者：${getRealAuthor()}.$suffix")
+}
+
+/**
+ * 获取分割文件后的文件名
+ */
+fun Book.getExportFileName(
+    suffix: String,
+    epubIndex: Int,
+    jsStr: String? = AppConfig.episodeExportFileName
+): String {
+    // 默认规则
+    val default = "$name 作者：${getRealAuthor()} [${epubIndex}].$suffix"
+    if (jsStr.isNullOrBlank()) {
+        return default
+    }
+    val bindings = SimpleBindings()
+    bindings["name"] = name
+    bindings["author"] = getRealAuthor()
+    bindings["epubIndex"] = epubIndex
+    return kotlin.runCatching {
+        RhinoScriptEngine.eval(jsStr, bindings).toString() + "." + suffix
+    }.onFailure {
+        AppLog.put("导出书名规则错误,使用默认规则\n${it.localizedMessage}", it)
+    }.getOrDefault(default)
+}
+
+fun tryParesExportFileName(jsStr: String): Boolean {
+    val bindings = SimpleBindings()
+    bindings["name"] = "name"
+    bindings["author"] = "author"
+    bindings["epubIndex"] = "epubIndex"
+    return runCatching {
+        RhinoScriptEngine.eval(jsStr, bindings)
+        true
+    }.getOrDefault(false)
 }

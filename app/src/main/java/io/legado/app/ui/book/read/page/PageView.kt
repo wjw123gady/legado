@@ -36,6 +36,7 @@ class PageView(context: Context) : FrameLayout(context) {
     private var tvBatteryP: BatteryView? = null
     private var tvPage: BatteryView? = null
     private var tvTotalProgress: BatteryView? = null
+    private var tvTotalProgress1: BatteryView? = null
     private var tvPageAndTotal: BatteryView? = null
     private var tvBookName: BatteryView? = null
     private var tvTimeBattery: BatteryView? = null
@@ -96,8 +97,8 @@ class PageView(context: Context) : FrameLayout(context) {
                 it.footerPaddingRight.dpToPx(),
                 it.footerPaddingBottom.dpToPx()
             )
-            vwTopDivider.visible(it.showHeaderLine)
-            vwBottomDivider.visible(it.showFooterLine)
+            vwTopDivider.gone(llHeader.isGone || !it.showHeaderLine)
+            vwBottomDivider.gone(llFooter.isGone || !it.showFooterLine)
         }
         contentTextView.upVisibleRect()
         upTime()
@@ -164,6 +165,12 @@ class PageView(context: Context) : FrameLayout(context) {
         }
         tvTotalProgress = getTipView(ReadTipConfig.totalProgress)?.apply {
             tag = ReadTipConfig.totalProgress
+            isBattery = false
+            typeface = ChapterProvider.typeface
+            textSize = 12f
+        }
+        tvTotalProgress1 = getTipView(ReadTipConfig.totalProgress1)?.apply {
+            tag = ReadTipConfig.totalProgress1
             isBattery = false
             typeface = ChapterProvider.typeface
             textSize = 12f
@@ -295,6 +302,7 @@ class PageView(context: Context) : FrameLayout(context) {
         tvTitle?.text = textPage.title
         tvPage?.text = "${index.plus(1)}/$pageSize"
         tvTotalProgress?.text = readProgress
+        tvTotalProgress1?.text = "${textPage.chapterIndex.plus(1)}/${textPage.chapterSize}"
         tvPageAndTotal?.text = "${index.plus(1)}/$pageSize  $readProgress"
     }
 
@@ -364,8 +372,8 @@ class PageView(context: Context) : FrameLayout(context) {
         binding.contentTextView.selectEndMoveIndex(relativePagePos, lineIndex, charIndex)
     }
 
-    fun cancelSelect(fromSearchExit: Boolean = false) {
-        binding.contentTextView.cancelSelect(fromSearchExit)
+    fun cancelSelect(clearSearchResult: Boolean = false) {
+        binding.contentTextView.cancelSelect(clearSearchResult)
     }
 
     fun createBookmark(): Bookmark? {

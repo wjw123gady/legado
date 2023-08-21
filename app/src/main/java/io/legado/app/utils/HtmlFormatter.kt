@@ -14,7 +14,7 @@ object HtmlFormatter {
     private val notImgHtmlRegex = "</?(?!img)[a-zA-Z]+(?=[ >])[^<>]*>".toRegex()
     private val otherHtmlRegex = "</?[a-zA-Z]+(?=[ >])[^<>]*>".toRegex()
     private val formatImagePattern = Pattern.compile(
-        "<img[^>]*src *= *\"([^\"{>]*\\{(?:[^{}]|\\{[^}>]+\\})+\\})\"[^>]*>|<img[^>]*data-[^=>]*= *\"([^\">]*)\"[^>]*>|<img[^>]*src *= *\"([^\">]*)\"[^>]*>",
+        "<img[^>]*\\ssrc\\s*=\\s*\"([^\"{>]*\\{(?:[^{}]|\\{[^}>]+\\})+\\})\"[^>]*>|<img[^>]*\\sdata-[^=>]*=\\s*\"([^\">]*)\"[^>]*>|<img[^>]*\\ssrc\\s*=\\s*\"([^\">]*)\"[^>]*>",
         Pattern.CASE_INSENSITIVE
     )
 
@@ -38,7 +38,7 @@ object HtmlFormatter {
         //正则的“|”处于顶端而不处于（）中时，具有类似||的熔断效果，故以此机制简化原来的代码
         val matcher = formatImagePattern.matcher(keepImgHtml)
         var appendPos = 0
-        val sb = StringBuffer()
+        val sb = StringBuilder()
         while (matcher.find()) {
             var param = ""
             sb.append(

@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import androidx.fragment.app.activityViewModels
+import androidx.lifecycle.lifecycleScope
 import io.legado.app.R
 import io.legado.app.base.VMBaseFragment
 import io.legado.app.data.appDb
@@ -18,14 +19,12 @@ import io.legado.app.utils.setEdgeEffectColor
 import io.legado.app.utils.showDialogFragment
 import io.legado.app.utils.viewbindingdelegate.viewBinding
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 
 class BookmarkFragment : VMBaseFragment<TocViewModel>(R.layout.fragment_bookmark),
     BookmarkAdapter.Callback,
-    BookmarkDialog.Callback,
     TocViewModel.BookmarkCallBack {
     override val viewModel by activityViewModels<TocViewModel>()
     private val binding by viewBinding(FragmentBookmarkBinding::bind)
@@ -51,13 +50,11 @@ class BookmarkFragment : VMBaseFragment<TocViewModel>(R.layout.fragment_bookmark
 
     override fun upBookmark(searchKey: String?) {
         val book = viewModel.bookData.value ?: return
-        launch {
-            withContext(IO) {
-                when {
-                    searchKey.isNullOrBlank() -> appDb.bookmarkDao.getByBook(book.name, book.author)
-                    else -> appDb.bookmarkDao.search(book.name, book.author, searchKey)
-                }
-            }.let {
+        lifecycleScope.launch {
+            when {
+                searchKey.isNullOrBlank() -> appDb.bookmarkDao.flowByBook(book.name, book.author)
+                else -> appDb.bookmarkDao.flowSearch(book.name, book.author, searchKey)
+            }.collect {
                 adapter.setItems(it)
                 var scrollPos = 0
                 withContext(Dispatchers.Default) {
@@ -88,11 +85,4 @@ class BookmarkFragment : VMBaseFragment<TocViewModel>(R.layout.fragment_bookmark
         showDialogFragment(BookmarkDialog(bookmark, pos))
     }
 
-    override fun upBookmark(pos: Int, bookmark: Bookmark) {
-        adapter.setItem(pos, bookmark)
-    }
-
-    override fun deleteBookmark(pos: Int) {
-        adapter.removeItem(pos)
-    }
 }

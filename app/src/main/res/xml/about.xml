@@ -42,12 +42,6 @@
             app:iconSpaceReserved="false" />
 
         <io.legado.app.lib.prefs.Preference
-            android:key="qq"
-            android:summary="@string/click_to_apply"
-            android:title="@string/join_qq_group"
-            app:iconSpaceReserved="false" />
-
-        <io.legado.app.lib.prefs.Preference
             android:key="mail"
             android:summary="@string/email"
             android:title="@string/send_mail"
@@ -97,6 +91,11 @@
         <io.legado.app.lib.prefs.Preference
             android:key="crashLog"
             android:title="@string/crash_log"
+            app:iconSpaceReserved="false" />
+
+        <io.legado.app.lib.prefs.Preference
+            android:key="privacyPolicy"
+            android:title="@string/privacy_policy"
             app:iconSpaceReserved="false" />
 
         <io.legado.app.lib.prefs.Preference

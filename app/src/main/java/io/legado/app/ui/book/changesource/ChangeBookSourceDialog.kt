@@ -9,7 +9,9 @@ import androidx.appcompat.widget.SearchView
 import androidx.appcompat.widget.Toolbar
 import androidx.core.os.bundleOf
 import androidx.fragment.app.viewModels
+import androidx.lifecycle.Lifecycle.State.STARTED
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import io.legado.app.R
@@ -25,12 +27,21 @@ import io.legado.app.databinding.DialogBookChangeSourceBinding
 import io.legado.app.help.config.AppConfig
 import io.legado.app.lib.dialogs.alert
 import io.legado.app.lib.theme.primaryColor
+import io.legado.app.ui.book.read.ReadBookActivity
 import io.legado.app.ui.book.source.edit.BookSourceEditActivity
 import io.legado.app.ui.book.source.manage.BookSourceActivity
 import io.legado.app.ui.widget.dialog.WaitDialog
 import io.legado.app.ui.widget.recycler.VerticalDivider
-import io.legado.app.utils.*
+import io.legado.app.utils.StartActivityContract
+import io.legado.app.utils.applyTint
+import io.legado.app.utils.cnCompare
+import io.legado.app.utils.dpToPx
+import io.legado.app.utils.observeEvent
+import io.legado.app.utils.setLayout
+import io.legado.app.utils.startActivity
+import io.legado.app.utils.toastOnUi
 import io.legado.app.utils.viewbindingdelegate.viewBinding
+import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.launch
@@ -63,12 +74,13 @@ class ChangeBookSourceDialog() : BaseDialogFragment(R.layout.dialog_book_change_
         if (it) {
             val searchGroup = AppConfig.searchGroup
             if (searchGroup.isNotEmpty()) {
-                launch {
+                lifecycleScope.launch {
                     alert("搜索结果为空") {
                         setMessage("${searchGroup}分组搜索结果为空,是否切换到全部分组")
                         cancelButton()
                         okButton {
                             AppConfig.searchGroup = ""
+                            upGroupMenuName()
                             viewModel.startSearch()
                         }
                     }
@@ -84,7 +96,7 @@ class ChangeBookSourceDialog() : BaseDialogFragment(R.layout.dialog_book_change_
 
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
         binding.toolBar.setBackgroundColor(primaryColor)
-        viewModel.initData(arguments)
+        viewModel.initData(arguments, callBack?.oldBook, activity is ReadBookActivity)
         showTitle()
         initMenu()
         initRecyclerView()
@@ -109,6 +121,8 @@ class ChangeBookSourceDialog() : BaseDialogFragment(R.layout.dialog_book_change_
             ?.isChecked = AppConfig.changeSourceLoadInfo
         binding.toolBar.menu.findItem(R.id.menu_load_toc)
             ?.isChecked = AppConfig.changeSourceLoadToc
+        binding.toolBar.menu.findItem(R.id.menu_load_word_count)
+            ?.isChecked = AppConfig.changeSourceLoadWordCount
     }
 
     private fun initRecyclerView() {
@@ -181,13 +195,15 @@ class ChangeBookSourceDialog() : BaseDialogFragment(R.layout.dialog_book_change_
             }
             binding.toolBar.menu.applyTint(requireContext())
         }
-        lifecycleScope.launchWhenStarted {
-            viewModel.searchDataFlow.conflate().collect {
-                adapter.setItems(it)
-                delay(1000)
+        lifecycleScope.launch {
+            repeatOnLifecycle(STARTED) {
+                viewModel.searchDataFlow.conflate().collect {
+                    adapter.setItems(it)
+                    delay(1000)
+                }
             }
         }
-        launch {
+        lifecycleScope.launch {
             appDb.bookSourceDao.flowEnabledGroups().conflate().collect {
                 groups.clear()
                 groups.addAll(it)
@@ -206,27 +222,38 @@ class ChangeBookSourceDialog() : BaseDialogFragment(R.layout.dialog_book_change_
                 item.isChecked = !item.isChecked
                 viewModel.refresh()
             }
+
             R.id.menu_load_info -> {
                 AppConfig.changeSourceLoadInfo = !item.isChecked
                 item.isChecked = !item.isChecked
             }
+
             R.id.menu_load_toc -> {
                 AppConfig.changeSourceLoadToc = !item.isChecked
                 item.isChecked = !item.isChecked
             }
+
+            R.id.menu_load_word_count -> {
+                AppConfig.changeSourceLoadWordCount = !item.isChecked
+                item.isChecked = !item.isChecked
+                viewModel.onLoadWordCountChecked(item.isChecked)
+            }
+
             R.id.menu_start_stop -> viewModel.startOrStopSearch()
             R.id.menu_source_manage -> startActivity<BookSourceActivity>()
             R.id.menu_refresh_list -> viewModel.startRefreshList()
-            else -> if (item?.groupId == R.id.source_group) {
-                if (!item.isChecked) {
-                    item.isChecked = true
-                    if (item.title.toString() == getString(R.string.all_source)) {
-                        AppConfig.searchGroup = ""
-                    } else {
-                        AppConfig.searchGroup = item.title.toString()
+            else -> if (item?.groupId == R.id.source_group && !item.isChecked) {
+                item.isChecked = true
+                if (item.title.toString() == getString(R.string.all_source)) {
+                    AppConfig.searchGroup = ""
+                } else {
+                    AppConfig.searchGroup = item.title.toString()
+                }
+                upGroupMenuName()
+                lifecycleScope.launch(IO) {
+                    if (viewModel.refresh()) {
+                        viewModel.startOrStopSearch()
                     }
-                    viewModel.startOrStopSearch()
-                    viewModel.refresh()
                 }
             }
         }
@@ -235,7 +262,7 @@ class ChangeBookSourceDialog() : BaseDialogFragment(R.layout.dialog_book_change_
 
     private fun scrollToDurSource() {
         adapter.getItems().forEachIndexed { index, searchBook ->
-            if (searchBook.bookUrl == bookUrl) {
+            if (searchBook.bookUrl == oldBookUrl) {
                 (binding.recyclerView.layoutManager as LinearLayoutManager)
                     .scrollToPositionWithOffset(index, 60.dpToPx())
                 return
@@ -264,7 +291,7 @@ class ChangeBookSourceDialog() : BaseDialogFragment(R.layout.dialog_book_change_
         }
     }
 
-    override val bookUrl: String?
+    override val oldBookUrl: String?
         get() = callBack?.oldBook?.bookUrl
 
     override fun topSource(searchBook: SearchBook) {
@@ -287,7 +314,7 @@ class ChangeBookSourceDialog() : BaseDialogFragment(R.layout.dialog_book_change_
 
     override fun deleteSource(searchBook: SearchBook) {
         viewModel.del(searchBook)
-        if (bookUrl == searchBook.bookUrl) {
+        if (oldBookUrl == searchBook.bookUrl) {
             viewModel.autoChangeSource(callBack?.oldBook?.type) { book, toc, source ->
                 callBack?.changeTo(source, book, toc)
             }
@@ -295,7 +322,7 @@ class ChangeBookSourceDialog() : BaseDialogFragment(R.layout.dialog_book_change_
     }
 
     override fun setBookScore(searchBook: SearchBook, score: Int) {
-        viewModel.setBookScore(searchBook,score)
+        viewModel.setBookScore(searchBook, score)
     }
 
     override fun getBookScore(searchBook: SearchBook): Int {
@@ -305,7 +332,7 @@ class ChangeBookSourceDialog() : BaseDialogFragment(R.layout.dialog_book_change_
     private fun changeSource(searchBook: SearchBook, onSuccess: (() -> Unit)? = null) {
         waitDialog.setText(R.string.load_toc)
         waitDialog.show()
-        val book = searchBook.toBook()
+        val book = viewModel.bookMap[searchBook.bookUrl] ?: searchBook.toBook()
         val coroutine = viewModel.getToc(book, {
             waitDialog.dismiss()
             toastOnUi(it)
@@ -323,24 +350,43 @@ class ChangeBookSourceDialog() : BaseDialogFragment(R.layout.dialog_book_change_
      * 更新分组菜单
      */
     private fun upGroupMenu() {
-        val menu: Menu = binding.toolBar.menu
-        val selectedGroup = AppConfig.searchGroup
-        menu.removeGroup(R.id.source_group)
-        val allItem = menu.add(R.id.source_group, Menu.NONE, Menu.NONE, R.string.all_source)
-        var hasSelectedGroup = false
-        groups.sortedWith { o1, o2 ->
-            o1.cnCompare(o2)
-        }.forEach { group ->
-            menu.add(R.id.source_group, Menu.NONE, Menu.NONE, group)?.let {
-                if (group == selectedGroup) {
-                    it.isChecked = true
-                    hasSelectedGroup = true
+        binding.toolBar.menu.findItem(R.id.menu_group)?.run {
+            subMenu?.let { menu ->
+                val selectedGroup = AppConfig.searchGroup
+                menu.removeGroup(R.id.source_group)
+                val allItem = menu.add(R.id.source_group, Menu.NONE, Menu.NONE, R.string.all_source)
+                var hasSelectedGroup = false
+                groups.sortedWith { o1, o2 ->
+                    o1.cnCompare(o2)
+                }.forEach { group ->
+                    menu.add(R.id.source_group, Menu.NONE, Menu.NONE, group)?.let {
+                        if (group == selectedGroup) {
+                            it.isChecked = true
+                            hasSelectedGroup = true
+                        }
+                    }
+                }
+                menu.setGroupCheckable(R.id.source_group, true, true)
+                if (hasSelectedGroup) {
+                    title = getString(R.string.group) + "(" + AppConfig.searchGroup + ")"
+                } else {
+                    allItem.isChecked = true
+                    title = getString(R.string.group)
                 }
             }
         }
-        menu.setGroupCheckable(R.id.source_group, true, true)
-        if (!hasSelectedGroup) {
-            allItem.isChecked = true
+    }
+
+    /**
+     * 更新分组菜单名
+     */
+    private fun upGroupMenuName() {
+        val menuGroup = binding.toolBar.menu.findItem(R.id.menu_group)
+        val searchGroup = AppConfig.searchGroup
+        if (searchGroup.isEmpty()) {
+            menuGroup?.title = getString(R.string.group)
+        } else {
+            menuGroup?.title = getString(R.string.group) + "($searchGroup)"
         }
     }
 
@@ -349,7 +395,7 @@ class ChangeBookSourceDialog() : BaseDialogFragment(R.layout.dialog_book_change_
             adapter.notifyItemRangeChanged(
                 0,
                 adapter.itemCount,
-                bundleOf(Pair("upCurSource", bookUrl))
+                bundleOf(Pair("upCurSource", oldBookUrl))
             )
         }
     }

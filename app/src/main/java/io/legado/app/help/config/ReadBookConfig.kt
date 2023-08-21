@@ -9,11 +9,28 @@ import io.legado.app.R
 import io.legado.app.constant.AppLog
 import io.legado.app.constant.PageAnim
 import io.legado.app.constant.PreferKey
-import io.legado.app.exception.NoStackTraceException
 import io.legado.app.help.DefaultData
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.ui.book.read.page.provider.ChapterProvider
-import io.legado.app.utils.*
+import io.legado.app.utils.BitmapUtils
+import io.legado.app.utils.FileUtils
+import io.legado.app.utils.GSON
+import io.legado.app.utils.compress.ZipUtils
+import io.legado.app.utils.createFolderReplace
+import io.legado.app.utils.externalCache
+import io.legado.app.utils.externalFiles
+import io.legado.app.utils.fromJsonArray
+import io.legado.app.utils.fromJsonObject
+import io.legado.app.utils.getCompatColor
+import io.legado.app.utils.getFile
+import io.legado.app.utils.getMeanColor
+import io.legado.app.utils.getPrefBoolean
+import io.legado.app.utils.getPrefInt
+import io.legado.app.utils.hexString
+import io.legado.app.utils.printOnDebug
+import io.legado.app.utils.putPrefBoolean
+import io.legado.app.utils.putPrefInt
+import io.legado.app.utils.resizeAndRecycle
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.withContext
 import splitties.init.appCtx
@@ -114,6 +131,22 @@ object ReadBookConfig {
         }
     }
 
+    fun getAllPicBgStr(): ArrayList<String> {
+        val list = arrayListOf<String>()
+        configList.forEach {
+            if (it.bgType == 2) {
+                list.add(it.bgStr)
+            }
+            if (it.bgTypeNight == 2) {
+                list.add(it.bgStrNight)
+            }
+            if (it.bgTypeEInk == 2) {
+                list.add(it.bgStrEInk)
+            }
+        }
+        return list
+    }
+
     fun deleteDur(): Boolean {
         if (configList.size > 5) {
             configList.removeAt(styleSelect)
@@ -154,7 +187,15 @@ object ReadBookConfig {
                 appCtx.putPrefBoolean(PreferKey.shareLayout, value)
             }
         }
+
+    /**
+     * 两端对齐
+     */
     val textFullJustify get() = appCtx.getPrefBoolean(PreferKey.textFullJustify, true)
+
+    /**
+     * 底部对齐
+     */
     val textBottomJustify get() = appCtx.getPrefBoolean(PreferKey.textBottomJustify, true)
     var hideStatusBar = appCtx.getPrefBoolean(PreferKey.hideStatusBar)
     var hideNavigationBar = appCtx.getPrefBoolean(PreferKey.hideNavigationBar)
@@ -210,7 +251,9 @@ object ReadBookConfig {
             config.paragraphSpacing = value
         }
 
-    //标题位置 0:居左 1:居中 2:隐藏
+    /**
+     * 标题位置 0:居左 1:居中 2:隐藏
+     */
     var titleMode: Int
         get() = config.titleMode
         set(value) {
@@ -221,6 +264,11 @@ object ReadBookConfig {
         set(value) {
             config.titleSize = value
         }
+
+    /**
+     * 是否标题居中
+     */
+    val isMiddleTitle get() = titleMode == 1
 
     var titleTopSpacing: Int
         get() = config.titleTopSpacing
@@ -238,6 +286,12 @@ object ReadBookConfig {
         get() = config.paragraphIndent
         set(value) {
             config.paragraphIndent = value
+        }
+
+    var underline: Boolean
+        get() = config.underline
+        set(value) {
+            config.underline = value
         }
 
     var paddingBottom: Int
@@ -371,14 +425,11 @@ object ReadBookConfig {
                 FileUtils.delete(configZipPath)
                 val zipFile = FileUtils.createFileIfNotExist(configZipPath)
                 zipFile.writeBytes(byteArray)
-                val configDirPath = FileUtils.getPath(appCtx.externalCache, "readConfig")
-                FileUtils.delete(configDirPath)
-                @Suppress("BlockingMethodInNonBlockingContext")
-                ZipUtils.unzipFile(zipFile, FileUtils.createFolderIfNotExist(configDirPath))
-                val configDir = FileUtils.createFolderIfNotExist(configDirPath)
+                val configDir = appCtx.externalCache.getFile("readConfig")
+                configDir.createFolderReplace()
+                ZipUtils.unZipToPath(zipFile, configDir)
                 val configFile = configDir.getFile(configFileName)
                 val config: Config = GSON.fromJsonObject<Config>(configFile.readText()).getOrThrow()
-                    ?: throw NoStackTraceException("排版配置格式错误")
                 if (config.textFont.isNotEmpty()) {
                     val fontName = FileUtils.getName(config.textFont)
                     val fontPath =
@@ -390,6 +441,7 @@ object ReadBookConfig {
                 }
                 if (config.bgType == 2) {
                     val bgName = FileUtils.getName(config.bgStr)
+                    config.bgStr = bgName
                     val bgPath = FileUtils.getPath(appCtx.externalFiles, "bg", bgName)
                     if (!FileUtils.exist(bgPath)) {
                         val bgFile = configDir.getFile(bgName)
@@ -401,6 +453,7 @@ object ReadBookConfig {
                 }
                 if (config.bgTypeNight == 2) {
                     val bgName = FileUtils.getName(config.bgStrNight)
+                    config.bgStrNight = bgName
                     val bgPath = FileUtils.getPath(appCtx.externalFiles, "bg", bgName)
                     if (!FileUtils.exist(bgPath)) {
                         val bgFile = configDir.getFile(bgName)
@@ -412,6 +465,7 @@ object ReadBookConfig {
                 }
                 if (config.bgTypeEInk == 2) {
                     val bgName = FileUtils.getName(config.bgStrEInk)
+                    config.bgStrEInk = bgName
                     val bgPath = FileUtils.getPath(appCtx.externalFiles, "bg", bgName)
                     if (!FileUtils.exist(bgPath)) {
                         val bgFile = configDir.getFile(bgName)
@@ -435,14 +489,14 @@ object ReadBookConfig {
         var bgAlpha: Int = 100,//背景透明度
         var bgType: Int = 0,//白天背景类型 0:颜色, 1:assets图片, 2其它图片
         var bgTypeNight: Int = 0,//夜间背景类型
-        var bgTypeEInk: Int = 0,
+        var bgTypeEInk: Int = 0,//EInk背景类型
         private var darkStatusIcon: Boolean = true,//白天是否暗色状态栏
         private var darkStatusIconNight: Boolean = false,//晚上是否暗色状态栏
         private var darkStatusIconEInk: Boolean = true,
         private var textColor: String = "#3E3D3B",//白天文字颜色
         private var textColorNight: String = "#ADADAD",//夜间文字颜色
         private var textColorEInk: String = "#000000",
-        private var pageAnim: Int = 0,
+        private var pageAnim: Int = 0,//翻页动画
         private var pageAnimEInk: Int = 3,
         var textFont: String = "",//字体
         var textBold: Int = 0,//是否粗体字 0:正常, 1:粗体, 2:细体
@@ -455,6 +509,7 @@ object ReadBookConfig {
         var titleTopSpacing: Int = 0,
         var titleBottomSpacing: Int = 0,
         var paragraphIndent: String = "　　",//段落缩进
+        var underline: Boolean = false, //下划线
         var paddingBottom: Int = 6,
         var paddingLeft: Int = 16,
         var paddingRight: Int = 16,
@@ -534,10 +589,12 @@ object ReadBookConfig {
                     bgTypeEInk = bgType
                     bgStrEInk = bg
                 }
+
                 AppConfig.isNightTheme -> {
                     bgTypeNight = bgType
                     bgStrNight = bg
                 }
+
                 else -> {
                     this.bgType = bgType
                     bgStr = bg
@@ -575,8 +632,13 @@ object ReadBookConfig {
                         val bitmap = BitmapUtils.decodeAssetsBitmap(appCtx, path, width, height)
                         BitmapDrawable(resources, bitmap?.resizeAndRecycle(width, height))
                     }
+
                     else -> {
-                        val bitmap = BitmapUtils.decodeBitmap(curBgStr(), width, height)
+                        val path = curBgStr().let {
+                            if (it.contains(File.separator)) it
+                            else FileUtils.getPath(appCtx.externalFiles, "bg", curBgStr())
+                        }
+                        val bitmap = BitmapUtils.decodeBitmap(path, width, height)
                         BitmapDrawable(resources, bitmap?.resizeAndRecycle(width, height))
                     }
                 }

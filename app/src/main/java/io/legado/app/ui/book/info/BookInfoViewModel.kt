@@ -2,41 +2,44 @@ package io.legado.app.ui.book.info
 
 import android.app.Application
 import android.content.Intent
+import android.net.Uri
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
+import com.github.junrar.exception.UnsupportedRarV5Exception
 import io.legado.app.R
 import io.legado.app.base.BaseViewModel
 import io.legado.app.constant.AppLog
-import io.legado.app.constant.BookSourceType
+import io.legado.app.constant.AppPattern
 import io.legado.app.constant.BookType
 import io.legado.app.constant.EventBus
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookChapter
 import io.legado.app.data.entities.BookSource
+import io.legado.app.exception.NoBooksDirException
 import io.legado.app.exception.NoStackTraceException
+import io.legado.app.help.AppWebDav
 import io.legado.app.help.book.*
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.lib.webdav.ObjectNotFoundException
 import io.legado.app.model.BookCover
 import io.legado.app.model.ReadBook
+import io.legado.app.model.analyzeRule.AnalyzeUrl
 import io.legado.app.model.localBook.LocalBook
-import io.legado.app.model.remote.RemoteBookWebDav
 import io.legado.app.model.webBook.WebBook
-import io.legado.app.utils.isContentScheme
-import io.legado.app.utils.postEvent
-import io.legado.app.utils.toastOnUi
+import io.legado.app.utils.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers.IO
 
 class BookInfoViewModel(application: Application) : BaseViewModel(application) {
     val bookData = MutableLiveData<Book>()
     val chapterListData = MutableLiveData<List<BookChapter>>()
+    val webFiles = mutableListOf<WebFile>()
     var inBookshelf = false
     var bookSource: BookSource? = null
     private var changeSourceCoroutine: Coroutine<*>? = null
-    val isImportBookOnLine: Boolean
-        get() = bookSource?.bookSourceType == BookSourceType.file
+    val waitDialogData = MutableLiveData<Boolean>()
+    val actionLive = MutableLiveData<String>()
 
     fun initData(intent: Intent) {
         execute {
@@ -60,6 +63,7 @@ class BookInfoViewModel(application: Application) : BaseViewModel(application) {
             }
             throw NoStackTraceException("未找到书籍")
         }.onError {
+            AppLog.put(it.localizedMessage, it)
             context.toastOnUi(it.localizedMessage)
         }
     }
@@ -82,8 +86,6 @@ class BookInfoViewModel(application: Application) : BaseViewModel(application) {
                 appDb.bookSourceDao.getBookSource(book.origin)
             if (book.tocUrl.isEmpty() && !book.isLocal) {
                 loadBookInfo(book)
-            } else if (isImportBookOnLine) {
-                chapterListData.postValue(emptyList())
             } else {
                 val chapterList = appDb.bookChapterDao.getChapterList(book.bookUrl)
                 if (chapterList.isNotEmpty()) {
@@ -114,11 +116,13 @@ class BookInfoViewModel(application: Application) : BaseViewModel(application) {
             if (book.isLocal) {
                 book.tocUrl = ""
                 book.getRemoteUrl()?.let {
-                    val remoteBook = RemoteBookWebDav.getRemoteBook(it)
+                    val bookWebDav = AppWebDav.defaultBookWebDav
+                        ?: throw NoStackTraceException("webDav没有配置")
+                    val remoteBook = bookWebDav.getRemoteBook(it)
                     if (remoteBook == null) {
                         book.origin = BookType.localTag
                     } else if (remoteBook.lastModify > book.lastCheckTime) {
-                        val uri = RemoteBookWebDav.downloadRemoteBook(remoteBook)
+                        val uri = bookWebDav.downloadRemoteBook(remoteBook)
                         book.bookUrl = if (uri.isContentScheme()) uri.toString() else uri.path!!
                         book.lastCheckTime = remoteBook.lastModify
                     }
@@ -129,6 +133,7 @@ class BookInfoViewModel(application: Application) : BaseViewModel(application) {
                 is ObjectNotFoundException -> {
                     book.origin = BookType.localTag
                 }
+
                 else -> {
                     AppLog.put("下载远程书籍<${book.name}>失败", it)
                 }
@@ -153,16 +158,17 @@ class BookInfoViewModel(application: Application) : BaseViewModel(application) {
                             appDb.bookDao.getBook(book.name, book.author)?.let {
                                 inBookshelf = true
                             }
-                            bookData.postValue(book)
-                            if (isImportBookOnLine) {
-                                appDb.searchBookDao.update(book.toSearchBook())
-                            }
+                            bookData.postValue(it)
                             if (inBookshelf) {
-                                appDb.bookDao.update(book)
+                                appDb.bookDao.update(it)
                             }
-                            loadChapter(it, scope)
+                            if (it.isWebFile) {
+                                loadWebFile(it, scope)
+                            } else {
+                                loadChapter(it, scope)
+                            }
                         }.onError {
-                            AppLog.put("获取数据信息失败\n${it.localizedMessage}", it)
+                            AppLog.put("获取书籍信息失败\n${it.localizedMessage}", it)
                             context.toastOnUi(R.string.error_get_book_info)
                         }
                 } ?: let {
@@ -185,14 +191,13 @@ class BookInfoViewModel(application: Application) : BaseViewModel(application) {
                     appDb.bookChapterDao.insert(*it.toTypedArray())
                     chapterListData.postValue(it)
                 }
-            } else if (isImportBookOnLine) {
-                chapterListData.postValue(emptyList())
             } else {
                 bookSource?.let { bookSource ->
                     val oldBook = book.copy()
                     WebBook.getChapterList(this, bookSource, book, true)
                         .onSuccess(IO) {
-                            if (inBookshelf) {
+                            val dbBook = appDb.bookDao.getBook(book.name, book.author)
+                            if (dbBook?.bookUrl == oldBook.bookUrl) {
                                 if (oldBook.bookUrl == book.bookUrl) {
                                     appDb.bookDao.update(book)
                                 } else {
@@ -222,11 +227,109 @@ class BookInfoViewModel(application: Application) : BaseViewModel(application) {
         }
     }
 
+
     fun loadGroup(groupId: Long, success: ((groupNames: String?) -> Unit)) {
         execute {
             appDb.bookGroupDao.getGroupNames(groupId).joinToString(",")
         }.onSuccess {
             success.invoke(it)
+        }
+    }
+
+    private fun loadWebFile(
+        book: Book,
+        scope: CoroutineScope = viewModelScope
+    ) {
+        execute(scope) {
+            webFiles.clear()
+            val fileNameNoExtension = if (book.author.isBlank()) book.name
+            else "${book.name} 作者：${book.author}"
+            book.downloadUrls!!.map {
+                val analyzeUrl = AnalyzeUrl(it, source = bookSource)
+                val mFileName = UrlUtil.getFileName(analyzeUrl)
+                    ?: "${fileNameNoExtension}.${analyzeUrl.type}"
+                WebFile(it, mFileName)
+            }
+        }.onError {
+            context.toastOnUi("LoadWebFileError\n${it.localizedMessage}")
+        }.onSuccess {
+            webFiles.addAll(it)
+        }
+    }
+
+    /* 导入或者下载在线文件 */
+    fun <T> importOrDownloadWebFile(webFile: WebFile, success: ((T) -> Unit)?) {
+        bookSource ?: return
+        execute {
+            waitDialogData.postValue(true)
+            if (webFile.isSupported) {
+                val book = LocalBook.importFileOnLine(
+                    webFile.url,
+                    bookData.value!!.getExportFileName(webFile.suffix),
+                    bookSource
+                )
+                changeToLocalBook(book)
+            } else {
+                LocalBook.saveBookFile(
+                    webFile.url,
+                    bookData.value!!.getExportFileName(webFile.suffix),
+                    bookSource
+                )
+            }
+        }.onSuccess {
+            @Suppress("unchecked_cast")
+            success?.invoke(it as T)
+        }.onError {
+            when (it) {
+                is NoBooksDirException -> actionLive.postValue("selectBooksDir")
+                else -> {
+                    AppLog.put("ImportWebFileError\n${it.localizedMessage}", it)
+                    context.toastOnUi("ImportWebFileError\n${it.localizedMessage}")
+                    webFiles.remove(webFile)
+                }
+            }
+        }.onFinally {
+            waitDialogData.postValue(false)
+        }
+    }
+
+    fun getArchiveFilesName(archiveFileUri: Uri, onSuccess: (List<String>) -> Unit) {
+        execute {
+            ArchiveUtils.getArchiveFilesName(archiveFileUri) {
+                AppPattern.bookFileRegex.matches(it)
+            }
+        }.onError {
+            when (it) {
+                is UnsupportedRarV5Exception -> context.toastOnUi("暂不支持 rar v5 解压")
+                else -> {
+                    AppLog.put("getArchiveEntriesName Error:\n${it.localizedMessage}", it)
+                    context.toastOnUi("getArchiveEntriesName Error:\n${it.localizedMessage}")
+                }
+            }
+        }.onSuccess {
+            onSuccess.invoke(it)
+        }
+    }
+
+    fun importArchiveBook(
+        archiveFileUri: Uri,
+        archiveEntryName: String,
+        success: ((Book) -> Unit)? = null
+    ) {
+        execute {
+            val suffix = archiveEntryName.substringAfterLast(".")
+            LocalBook.importArchiveFile(
+                archiveFileUri,
+                bookData.value!!.getExportFileName(suffix)
+            ) {
+                it.contains(archiveEntryName)
+            }.first()
+        }.onSuccess {
+            val book = changeToLocalBook(it)
+            success?.invoke(book)
+        }.onError {
+            AppLog.put("importArchiveBook Error:\n${it.localizedMessage}", it)
+            context.toastOnUi("importArchiveBook Error:\n${it.localizedMessage}")
         }
     }
 
@@ -237,6 +340,7 @@ class BookInfoViewModel(application: Application) : BaseViewModel(application) {
             bookData.value?.migrateTo(book, toc)
             if (inBookshelf) {
                 book.removeType(BookType.updateError)
+                bookData.value?.delete()
                 appDb.bookDao.insert(book)
                 appDb.bookChapterDao.insert(*toc.toTypedArray())
             }
@@ -308,6 +412,14 @@ class BookInfoViewModel(application: Application) : BaseViewModel(application) {
         }
     }
 
+    fun getBook(toastNull: Boolean = true): Book? {
+        val book = bookData.value
+        if (toastNull && book == null) {
+            context.toastOnUi("book is null")
+        }
+        return book
+    }
+
     fun delBook(deleteOriginal: Boolean = false, success: (() -> Unit)? = null) {
         execute {
             bookData.value?.let {
@@ -325,6 +437,9 @@ class BookInfoViewModel(application: Application) : BaseViewModel(application) {
     fun clearCache() {
         execute {
             BookHelp.clearCache(bookData.value!!)
+            if (ReadBook.book?.bookUrl == bookData.value!!.bookUrl) {
+                ReadBook.clearTextChapter()
+            }
         }.onSuccess {
             context.toastOnUi(R.string.clear_cache_success)
         }.onError {
@@ -340,14 +455,33 @@ class BookInfoViewModel(application: Application) : BaseViewModel(application) {
         }
     }
 
-    fun changeToLocalBook(bookUrl: String) {
-        appDb.bookDao.getBook(bookUrl)?.let { localBook ->
+    private fun changeToLocalBook(localBook: Book): Book {
+        return LocalBook.mergeBook(localBook, bookData.value).let {
+            bookData.postValue(it)
+            loadChapter(it)
             inBookshelf = true
-            LocalBook.mergeBook(localBook, bookData.value).let {
-                bookData.postValue(it)
-                loadChapter(it)
-            }
+            it
         }
+    }
+
+    data class WebFile(
+        val url: String,
+        val name: String,
+    ) {
+
+        override fun toString(): String {
+            return name
+        }
+
+        // 后缀
+        val suffix: String = UrlUtil.getSuffix(name)
+
+        // txt epub umd pdf等文件
+        val isSupported: Boolean = AppPattern.bookFileRegex.matches(name)
+
+        // 压缩包形式的txt epub umd pdf文件
+        val isSupportDecompress: Boolean = AppPattern.archiveFileRegex.matches(name)
+
     }
 
 }

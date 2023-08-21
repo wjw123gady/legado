@@ -15,6 +15,24 @@
 
 ## 当前类对象的可使用的部分方法
 
+### [RssJsExtensions](https://github.com/gedoor/legado/blob/master/app/src/main/java/io/legado/app/ui/rss/read/RssJsExtensions.kt)
+> 只能在订阅源`shouldOverrideUrlLoading`规则中使用  
+> 订阅添加跳转url拦截, js, 返回true拦截,js变量url,可以通过js打开url  
+> 例子https://github.com/gedoor/legado/discussions/3259
+
+* 调用阅读搜索
+
+```
+java.searchBook(
+bookName)
+```
+
+* 添加书架
+
+```
+java.addBook(bookUrl)
+```
+
 ### [AnalyzeUrl](https://github.com/gedoor/legado/blob/master/app/src/main/java/io/legado/app/model/analyzeRule/AnalyzeUrl.kt) 部分函数
 > js中通过java.调用,只在`登录检查JS`规则中有效
 ```
@@ -64,6 +82,12 @@ java.put(key, value)
 
 ### [js扩展类](https://github.com/gedoor/legado/blob/master/app/src/main/java/io/legado/app/help/JsExtensions.kt) 部分函数
 
+* 链接解析[JsURL](https://github.com/gedoor/legado/blob/master/app/src/main/java/io/legado/app/utils/JsURL.kt)
+
+```
+java.toURL(url): JsURL
+java.toURL(url, baseUrl): JsURL
+```
 * 网络请求
 
 ```
@@ -83,7 +107,13 @@ java.head(url: String, headerMap: Map<String, String>): Connection.Response
 * @param url html内如果有相对路径的资源不传入url访问不了
 * @param js 用来取返回值的js语句, 没有就返回整个源代码
 * @return 返回js获取的内容
-java.webView(html: String?, url: String?, js: String?): String
+java.webView(html: String?, url: String?, js: String?): String?
+
+* 使用webView获取跳转url
+java.webViewGetOverrideUrl(html: String?, url: String?, js: String?, overrideUrlRegex: String): String?
+
+* 使用webView获取资源url
+java.webViewGetSource(html: String?, url: String?, js: String?, sourceRegex: String): String?
 
 * 使用内置浏览器打开链接，可用于获取验证码 手动验证网站防爬
 * @param url 要打开的链接
@@ -124,9 +154,14 @@ eval(String(java.cacheFile(url)))
 删除缓存文件
 cache.delete(java.md5Encode16(url))
 ```
-* 获取网络zip文件里面的数据
+* 获取网络压缩文件里面指定路径的数据 *可替换Zip Rar 7Z
 ```
-java.getZipStringContent(url: String, path: String)
+java.get*StringContent(url: String, path: String): String
+
+java.get*StringContent(url: String, path: String, charsetName: String): String
+
+java.get*ByteArrayContent(url: String, path: String): ByteArray?
+
 ```
 * base64
 > flags参数可省略，默认Base64.NO_WRAP，查看[flags参数说明](https://blog.csdn.net/zcmain/article/details/97051870)
@@ -154,13 +189,28 @@ java.hexDecodeToString(hex: String)
 utf8 编码为hexString
 java.hexEncodeToString(utf8: String)
 ```
+* 标识id
+```
+java.randomUUID()
+java.androidId()
+```
+* 繁简转换
+```
+将文本转换为简体
+java.t2s(text: String): String
+将文本转换为繁体
+java.s2t(text: String): String
+```
 * 文件
 >  所有对于文件的读写删操作都是相对路径,只能操作阅读缓存/android/data/{package}/cache/内的文件
 ```
-//文件下载,content为十六进制字符串,url用于生成文件名，返回文件路径
-downloadFile(content: String, url: String): String
+//文件下载 url用于生成文件名，返回文件路径
+downloadFile(url: String): String
 //文件解压,zipPath为压缩文件路径，返回解压路径
+unArchiveFile(zipPath: String): String
 unzipFile(zipPath: String): String
+unrarFile(zipPath: String): String
+un7zFile(zipPath: String): String
 //文件夹内所有文件读取
 getTxtInFolder(unzipPath: String): String
 //读取文本文件
@@ -168,56 +218,91 @@ readTxtFile(path: String): String
 //删除文件
 deleteFile(path: String) 
 ```
-****
-> [常见加密解密算法介绍](https://www.yijiyong.com/algorithm/encryption/01-intro.html)
 
-> [相关概念](https://blog.csdn.net/OrangeJack/article/details/82913804)
+### [js加解密类](https://github.com/gedoor/legado/blob/master/app/src/main/java/io/legado/app/help/JsEncodeUtils.kt) 部分函数
 
-> [Android支持的transformation](https://developer.android.google.cn/reference/kotlin/javax/crypto/Cipher?hl=en)
+> 提供在JavaScript环境中快捷调用crypto算法的函数，由[hutool-crypto](https://www.hutool.cn/docs/#/crypto/概述)实现  
 
-> 其他加密方式 可在js中[调用](https://m.jb51.net/article/92138.htm)[hutool-crypto](https://www.hutool.cn/docs/#/)
+> 其他没有添加的算法可在JavaScript中使用`JavaImporter`[调用](https://m.jb51.net/article/92138.htm)Java，例子可参考`朗读引擎-阿里云语音`  
 
-* 对称加密AES/DES/TripleDES
-> AES transformation默认实现AES/ECB/PKCS5Padding  
-> DES transformation默认实现DES/ECB/PKCS5Padding  
-> TripleDES tansformation默认实现DESede/ECB/PKCS5Padding  
-> 内部实现为cn.hutool.crypto 解密加密接口支持ByteArray|Base64String|HexString|InputStream  
-> 输入参数key iv 支持ByteArray|Utf8String  
-> 如果key iv 为Hex Base64,且需要解码为ByteArray，自行调用java.base64DecodeToByteArray java.hexDecodeToByteArray
+> 注意阅读app会屏蔽部分java类调用，见[RhinoClassShutter](https://github.com/gedoor/legado/blob/master/modules/rhino1.7.3/src/main/java/com/script/rhino/RhinoClassShutter.kt)
+
+> 注意：如果输入的参数不是Utf8String 可先调用`java.hexDecodeToByteArray java.base64DecodeToByteArray`转成ByteArray
+* 对称加密
+> 输入参数key iv 支持ByteArray|**Utf8String**
 ```
-//解密为ByteArray 字符串
-java.createSymmetricCrypto(transformation, key, iv).decrypt(data)
-
-java.createSymmetricCrypto(transformation, key, iv).decryptStr(data)
-
+// 创建Cipher
+java.createSymmetricCrypto(transformation, key, iv)
+```
+>解密加密参数 data支持ByteArray|Base64String|HexString|InputStream
+```
+//解密为ByteArray String
+cipher.decrypt(data)
+cipher.decryptStr(data)
 //加密为ByteArray Base64字符 HEX字符
-java.createSymmetricCrypto(transformation, key, iv).encrypt(data)
+cipher.encrypt(data)
+cipher.encryptBase64(data)
+cipher.encryptHex(data)
+```
+* 非对称加密
+> 输入参数 key支持ByteArray|**Utf8String**
+```
+//创建cipher
+java.createAsymmetricCrypto(transformation)
+//设置密钥
+.setPublicKey(key)
+.setPrivateKey(key)
 
-java.createSymmetricCrypto(transformation, key, iv).encryptBase64(data)
-
-java.createSymmetricCrypto(transformation, key, iv).encryptHex(data)
+```
+> 解密加密参数 data支持ByteArray|Base64String|HexString|InputStream  
+```
+//解密为ByteArray String
+cipher.decrypt(data,  usePublicKey: Boolean? = true
+)
+cipher.decryptStr(data, usePublicKey: Boolean? = true
+)
+//加密为ByteArray Base64字符 HEX字符
+cipher.encrypt(data,  usePublicKey: Boolean? = true
+)
+cipher.encryptBase64(data,  usePublicKey: Boolean? = true
+)
+cipher.encryptHex(data,  usePublicKey: Boolean? = true
+)
+```
+* 签名
+> 输入参数 key 支持ByteArray|**Utf8String**
+```
+//创建Sign
+java.createSign(algorithm)
+//设置密钥
+.setPublicKey(key)
+.setPrivateKey(key)
+```
+> 签名参数 data支持ByteArray|inputStream|String
+```
+//签名输出 ByteArray HexString
+sign.sign(data)
+sign.signHex(data)
 ```
 * 摘要
-> MD5 SHA-1 SHA-224 SHA-256 SHA-384 SHA-512
 ```
 java.digestHex(data: String, algorithm: String,): String?
 
 java.digestBase64Str(data: String, algorithm: String,): String?
-```
-* HMac(部分算法暂不支持)
-> DESMAC DESMAC/CFB8 DESedeMAC DESedeMAC/CFB8 DESedeMAC64 DESwithISO9797 HmacMD5 HmacSHA* ISO9797ALG3MAC PBEwithSHA*
-```
-java.HMacHex(data: String, algorithm: String, key: String): String
-
-java.HMacBase64(data: String, algorithm: String, key: String): String
 ```
 * md5
 ```
 java.md5Encode(str)
 java.md5Encode16(str)
 ```
+* HMac
+```
+java.HMacHex(data: String, algorithm: String, key: String): String
 
-## book对象的可用属性和方法
+java.HMacBase64(data: String, algorithm: String, key: String): String
+```
+
+## book对象的可用属性
 ### 属性
 > 使用方法: 在js中或{{}}中使用book.属性的方式即可获取.如在正文内容后加上 ##{{book.name+"正文卷"+title}} 可以净化 书名+正文卷+章节名称（如 我是大明星正文卷第二章我爸是豪门总裁） 这一类的字符.
 ```
@@ -250,11 +335,6 @@ order // 手动排序
 originOrder //书源排序
 variable // 自定义书籍变量信息(用于书源规则检索书籍信息)
  ```
-### 方法
-```
-//可在正文js中关闭净化 对于漫画源有用
-book.setUseReplaceRule(boolean)
-```
 
 ## chapter对象的部分可用属性
 > 使用方法: 在js中或{{}}中使用chapter.属性的方式即可获取.如在正文内容后加上 ##{{chapter.title+chapter.index}} 可以净化 章节标题+序号(如 第二章 天仙下凡2) 这一类的字符.
@@ -311,13 +391,18 @@ cookie.removeCookie(url)
 > 保存至数据库和缓存文件(50M)，保存的内容较大时请使用`getFile putFile`
 ```
 保存
-cache.put(key, value , saveTime)
+cache.put(key: String, value: Any , saveTime: Int)
 读取数据库
-cache.get(key)
+cache.get(key: String): String?
 删除
-cache.delete(key)
+cache.delete(key: String)
 缓存文件内容
-cache.putFile(key, value, saveTime)
+cache.putFile(key: String, value: String, saveTime: Int)
 读取文件内容
-cache.getFile(key)
+cache.getFile(key: String): String?
+保存到内存
+cache.deleteMemory(key: String)
+cache.getFromMemory(key: String): Any?
+cache.putMemory(key: String, value: Any)
+
 ```

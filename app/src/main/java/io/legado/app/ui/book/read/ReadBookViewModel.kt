@@ -23,13 +23,13 @@ import io.legado.app.help.book.isLocal
 import io.legado.app.help.book.removeType
 import io.legado.app.help.config.AppConfig
 import io.legado.app.help.coroutine.Coroutine
+import io.legado.app.model.ImageProvider
 import io.legado.app.model.ReadAloud
 import io.legado.app.model.ReadBook
 import io.legado.app.model.localBook.LocalBook
 import io.legado.app.model.webBook.WebBook
 import io.legado.app.service.BaseReadAloudService
 import io.legado.app.ui.book.read.page.entities.TextChapter
-import io.legado.app.ui.book.read.page.provider.ImageProvider
 import io.legado.app.ui.book.searchContent.SearchResult
 import io.legado.app.utils.*
 import kotlinx.coroutines.Dispatchers.IO
@@ -60,6 +60,7 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
         execute {
             ReadBook.inBookshelf = intent.getBooleanExtra("inBookshelf", true)
             ReadBook.tocChanged = intent.getBooleanExtra("tocChanged", false)
+            ReadBook.chapterChanged = intent.getBooleanExtra("chapterChanged", false)
             val bookUrl = intent.getStringExtra("bookUrl")
             val book = when {
                 bookUrl.isNullOrEmpty() -> appDb.bookDao.lastReadBook
@@ -104,7 +105,10 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
             }
             ReadBook.loadContent(resetPageOffset = false)
         }
-        if (!isSameBook || !BaseReadAloudService.isRun) {
+        if (ReadBook.chapterChanged) {
+            // 有章节跳转不同步阅读进度
+            ReadBook.chapterChanged = false
+        } else if (!isSameBook || !BaseReadAloudService.isRun) {
             syncBookProgress(book)
         }
         if (!book.isLocal && ReadBook.bookSource == null) {
@@ -134,7 +138,7 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
     /**
      * 加载目录
      */
-    fun loadChapterList(book: Book, callback: (() -> Unit)? = null) {
+    fun loadChapterList(book: Book) {
         if (book.isLocal) {
             execute {
                 LocalBook.getChapterList(book).let {
@@ -151,13 +155,12 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
                     is SecurityException, is FileNotFoundException -> {
                         permissionDenialLiveData.postValue(1)
                     }
+
                     else -> {
                         AppLog.put("LoadTocError:${it.localizedMessage}", it)
                         ReadBook.upMsg("LoadTocError:${it.localizedMessage}")
                     }
                 }
-            }.onFinally {
-                callback?.invoke()
             }
         } else {
             ReadBook.bookSource?.let {
@@ -177,8 +180,6 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
                         ReadBook.loadContent(resetPageOffset = true)
                     }.onError {
                         ReadBook.upMsg(context.getString(R.string.error_load_toc))
-                    }.onFinally {
-                        callback?.invoke()
                     }
             }
         }
@@ -220,6 +221,7 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
             ReadBook.upMsg(context.getString(R.string.loading))
             ReadBook.book?.migrateTo(book, toc)
             book.removeType(BookType.updateError)
+            ReadBook.book?.delete()
             appDb.bookDao.insert(book)
             appDb.bookChapterDao.insert(*toc.toTypedArray())
             ReadBook.resetData(book)
@@ -433,14 +435,12 @@ class ReadBookViewModel(application: Application) : BaseViewModel(application) {
      */
     fun reverseRemoveSameTitle() {
         execute {
-            val book = ReadBook.book
-            val textChapter = ReadBook.curTextChapter
-            if (book != null && textChapter != null) {
-                BookHelp.setRemoveSameTitle(
-                    book, textChapter.chapter, !textChapter.sameTitleRemoved
-                )
-                ReadBook.loadContent(ReadBook.durChapterIndex)
-            }
+            val book = ReadBook.book ?: return@execute
+            val textChapter = ReadBook.curTextChapter ?: return@execute
+            BookHelp.setRemoveSameTitle(
+                book, textChapter.chapter, !textChapter.sameTitleRemoved
+            )
+            ReadBook.loadContent(ReadBook.durChapterIndex)
         }
     }
 

@@ -6,12 +6,10 @@ import androidx.room.*
 import io.legado.app.constant.AppPattern
 import io.legado.app.constant.BookSourceType
 import io.legado.app.data.entities.rule.*
-import io.legado.app.help.source.SourceAnalyzer
 import io.legado.app.utils.GSON
 import io.legado.app.utils.fromJsonObject
 import io.legado.app.utils.splitNotBlank
 import kotlinx.parcelize.Parcelize
-import java.io.InputStream
 
 @Suppress("unused")
 @Parcelize
@@ -34,16 +32,19 @@ data class BookSource(
     // 详情页url正则
     var bookUrlPattern: String? = null,
     // 手动排序编号
+    @ColumnInfo(defaultValue = "0")
     var customOrder: Int = 0,
     // 是否启用
+    @ColumnInfo(defaultValue = "1")
     var enabled: Boolean = true,
     // 启用发现
-    var enabledExplore: Boolean = false,
-    // 启用段评
-    var enabledReview: Boolean? = false,
+    @ColumnInfo(defaultValue = "1")
+    var enabledExplore: Boolean = true,
+    // js库
+    override var jsLib: String? = null,
     // 启用okhttp CookieJAr 自动保存每次请求的cookie
     @ColumnInfo(defaultValue = "0")
-    override var enabledCookieJar: Boolean? = false,
+    override var enabledCookieJar: Boolean? = true,
     // 并发率
     override var concurrentRate: String? = null,
     // 请求头
@@ -68,6 +69,8 @@ data class BookSource(
     var weight: Int = 0,
     // 发现url
     var exploreUrl: String? = null,
+    // 发现筛选规则
+    var exploreScreen: String? = null,
     // 发现规则
     var ruleExplore: ExploreRule? = null,
     // 搜索url
@@ -180,7 +183,7 @@ data class BookSource(
 
     fun getInvalidGroupNames(): String {
         return bookSourceGroup?.splitNotBlank(AppPattern.splitGroupRegex)?.toHashSet()?.filter {
-            "失效" in it
+            "失效" in it || it == "校验超时"
         }?.joinToString() ?: ""
     }
 
@@ -192,8 +195,8 @@ data class BookSource(
         }
     }
 
-    fun equal(source: BookSource) =
-        equal(bookSourceName, source.bookSourceName)
+    fun equal(source: BookSource): Boolean {
+        return equal(bookSourceName, source.bookSourceName)
                 && equal(bookSourceUrl, source.bookSourceUrl)
                 && equal(bookSourceGroup, source.bookSourceGroup)
                 && bookSourceType == source.bookSourceType
@@ -216,23 +219,9 @@ data class BookSource(
                 && getBookInfoRule() == source.getBookInfoRule()
                 && getTocRule() == source.getTocRule()
                 && getContentRule() == source.getContentRule()
+    }
 
     private fun equal(a: String?, b: String?) = a == b || (a.isNullOrEmpty() && b.isNullOrEmpty())
-
-    companion object {
-
-        fun fromJson(json: String): Result<BookSource> {
-            return SourceAnalyzer.jsonToBookSource(json)
-        }
-
-        fun fromJsonArray(json: String): Result<MutableList<BookSource>> {
-            return SourceAnalyzer.jsonToBookSources(json)
-        }
-
-        fun fromJsonArray(inputStream: InputStream): Result<MutableList<BookSource>> {
-            return SourceAnalyzer.jsonToBookSources(inputStream)
-        }
-    }
 
     class Converters {
 

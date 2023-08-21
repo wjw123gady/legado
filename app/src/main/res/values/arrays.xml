@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
+
+	<string-array name="server_type">
+		<item>WEBDAV</item>
+	</string-array>
+
 	<string-array name="book_type">
 		<item>Text</item>
 		<item>Audio</item>
@@ -18,6 +23,7 @@
 		<item>@string/bookshelf_px_1</item>
 		<item>@string/bookshelf_px_2</item>
 		<item>@string/bookshelf_px_3</item>
+		<item>@string/bookshelf_px_4</item>
 	</string-array>
 
 	<string-array name="indent">
@@ -112,7 +118,8 @@
 		<item>Battery</item>
 		<item>Battery%</item>
 		<item>Pages</item>
-		<item>Progress</item>
+		<item>Progress(%)</item>
+		<item>Progress(xx/yyy)</item>
 		<item>Pages and progress</item>
 		<item>Time and Battery</item>
 		<item>Time and Battery%</item>

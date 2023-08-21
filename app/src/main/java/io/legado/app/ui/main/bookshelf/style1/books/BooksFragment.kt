@@ -5,12 +5,12 @@ import android.os.Bundle
 import android.view.View
 import androidx.core.view.isGone
 import androidx.fragment.app.activityViewModels
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import io.legado.app.R
 import io.legado.app.base.BaseFragment
-import io.legado.app.constant.AppConst
 import io.legado.app.constant.AppLog
 import io.legado.app.constant.EventBus
 import io.legado.app.constant.PreferKey
@@ -46,6 +46,7 @@ class BooksFragment() : BaseFragment(R.layout.fragment_books),
         bundle.putInt("position", position)
         bundle.putLong("groupId", group.groupId)
         bundle.putInt("bookSort", group.getRealBookSort())
+        bundle.putBoolean("enableRefresh", group.enableRefresh)
         arguments = bundle
     }
 
@@ -63,10 +64,13 @@ class BooksFragment() : BaseFragment(R.layout.fragment_books),
     }
     private var booksFlowJob: Job? = null
     private var savedInstanceState: Bundle? = null
-    private var position = 0
-    private var groupId = -1L
-    private var bookSort = 0
-    private var upLastUpdateTimeJob : Job? = null
+    var position = 0
+        private set
+    var groupId = -1L
+        private set
+    var bookSort = 0
+        private set
+    private var upLastUpdateTimeJob: Job? = null
 
     override fun onFragmentCreated(view: View, savedInstanceState: Bundle?) {
         this.savedInstanceState = savedInstanceState
@@ -74,6 +78,7 @@ class BooksFragment() : BaseFragment(R.layout.fragment_books),
             position = it.getInt("position", 0)
             groupId = it.getLong("groupId", -1)
             bookSort = it.getInt("bookSort", 0)
+            binding.refreshLayout.isEnabled = it.getBoolean("enableRefresh", true)
         }
         initRecyclerView()
         upRecyclerData()
@@ -112,24 +117,39 @@ class BooksFragment() : BaseFragment(R.layout.fragment_books),
         startLastUpdateTimeJob()
     }
 
+    fun upBookSort(sort: Int) {
+        binding.root.post {
+            arguments?.putInt("bookSort", sort)
+            bookSort = sort
+            upRecyclerData()
+        }
+    }
+
+    fun setEnableRefresh(enableRefresh: Boolean) {
+        binding.refreshLayout.isEnabled = enableRefresh
+    }
+
+    /**
+     * 更新书籍列表信息
+     */
     private fun upRecyclerData() {
         booksFlowJob?.cancel()
-        booksFlowJob = launch {
-            when (groupId) {
-                AppConst.bookGroupAllId -> appDb.bookDao.flowAll()
-                AppConst.bookGroupLocalId -> appDb.bookDao.flowLocal()
-                AppConst.bookGroupAudioId -> appDb.bookDao.flowAudio()
-                AppConst.bookGroupNetNoneId -> appDb.bookDao.flowNetNoGroup()
-                AppConst.bookGroupLocalNoneId -> appDb.bookDao.flowLocalNoGroup()
-                AppConst.bookGroupErrorId -> appDb.bookDao.flowUpdateError()
-                else -> appDb.bookDao.flowByGroup(groupId)
-            }.conflate().map { list ->
+        booksFlowJob = lifecycleScope.launch {
+            appDb.bookDao.flowByGroup(groupId).map { list ->
+                //排序
                 when (bookSort) {
                     1 -> list.sortedByDescending { it.latestChapterTime }
                     2 -> list.sortedWith { o1, o2 ->
                         o1.name.cnCompare(o2.name)
                     }
+
                     3 -> list.sortedBy { it.order }
+
+                    // 综合排序 issue #3192
+                    4 -> list.sortedByDescending {
+                        max(it.latestChapterTime, it.durChapterTime)
+                    }
+
                     else -> list.sortedByDescending { it.durChapterTime }
                 }
             }.flowOn(Dispatchers.Default).catch {
@@ -173,7 +193,7 @@ class BooksFragment() : BaseFragment(R.layout.fragment_books),
         if (!AppConfig.showLastUpdateTime) {
             return
         }
-        upLastUpdateTimeJob = launch {
+        upLastUpdateTimeJob = lifecycleScope.launch {
             while (isActive) {
                 if (SystemUtils.isScreenOn()) {
                     booksAdapter.upLastUpdateTime()
@@ -227,6 +247,7 @@ class BooksFragment() : BaseFragment(R.layout.fragment_books),
                 startActivity<AudioPlayActivity> {
                     putExtra("bookUrl", book.bookUrl)
                 }
+
             else -> startActivity<ReadBookActivity> {
                 putExtra("bookUrl", book.bookUrl)
             }
